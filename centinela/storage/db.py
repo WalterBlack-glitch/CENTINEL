@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
+import time
 from pathlib import Path
 
 from ..core import ThreatEvent
@@ -38,12 +40,29 @@ CREATE INDEX IF NOT EXISTS idx_events_severity ON events(severity);
 
 
 class EventStore:
-    def __init__(self, path: str = "centinela.db") -> None:
+    def __init__(self, path: str = "centinela.db",
+                 commit_every: int = 50, flush_secs: float = 1.0) -> None:
         self.path = str(Path(path))
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        # M-5: el .db contiene IPs/usuarios/logs sensibles -> no world-readable.
+        old = os.umask(0o077)
+        try:
+            self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        finally:
+            os.umask(old)
+        try:
+            os.chmod(self.path, 0o600)
+        except OSError:
+            pass
+        # WAL: lecturas concurrentes (top_actors) sin bloquear escrituras.
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
         self._lock = asyncio.Lock()
+        self._pending = 0
+        self._last_commit = time.monotonic()
+        self._commit_every = commit_every
+        self._flush_secs = flush_secs
 
     async def save(self, ev: ThreatEvent) -> None:
         async with self._lock:
@@ -60,7 +79,15 @@ class EventStore:
              ev.message, json.dumps(ev.enrichment), json.dumps(sorted(ev.tags)),
              ev.raw),
         )
-        self._conn.commit()
+        # M-5: commit por lote (N inserts o cada flush_secs) en vez de por evento,
+        # evita el vector de DoS de I/O bajo flood.
+        self._pending += 1
+        now = time.monotonic()
+        if (self._pending >= self._commit_every
+                or now - self._last_commit >= self._flush_secs):
+            self._conn.commit()
+            self._pending = 0
+            self._last_commit = now
 
     def top_actors(self, limit: int = 20) -> list[dict]:
         cur = self._conn.execute(
@@ -71,4 +98,8 @@ class EventStore:
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
     def close(self) -> None:
+        try:
+            self._conn.commit()
+        except sqlite3.Error:
+            pass
         self._conn.close()

@@ -20,7 +20,10 @@ from dataclasses import dataclass, field
 
 from ..core import EventBus, Severity, ThreatEvent
 
-WINDOW = 120.0  # segundos de memoria por actor
+WINDOW = 120.0       # segundos de memoria por actor
+MAX_ACTORS = 50_000  # tope duro: evita agotamiento de RAM (C-1)
+MAX_USERS = 256      # cota por actor para usuarios/puertos rastreados
+MAX_PORTS = 1024
 
 
 @dataclass
@@ -33,6 +36,7 @@ class Actor:
     last_mac: str | None = None
     last_alert: dict[str, float] = field(default_factory=dict)
     score: float = 0.0
+    last_seen: float = 0.0
 
     def prune(self, now: float) -> None:
         while self.fails and now - self.fails[0] > WINDOW:
@@ -45,6 +49,20 @@ class CorrelationEngine:
     def __init__(self, bus: EventBus) -> None:
         self.bus = bus
         self.actors: dict[str, Actor] = {}
+        self._last_evict = 0.0
+
+    def _evict(self, now: float, force: bool = False) -> None:
+        """Purga actores inactivos (C-1). Throttle: como mucho cada 5 s."""
+        if not force and now - self._last_evict < 5.0:
+            return
+        self._last_evict = now
+        dead = [ip for ip, a in self.actors.items()
+                if now - a.last_seen > WINDOW * 2 and a.score == 0]
+        for ip in dead:
+            del self.actors[ip]
+        if force and self.actors:
+            oldest = min(self.actors, key=lambda ip: self.actors[ip].last_seen)
+            del self.actors[oldest]
 
     def get_actors(self) -> list[Actor]:
         return sorted(self.actors.values(), key=lambda a: a.score, reverse=True)
@@ -53,16 +71,24 @@ class CorrelationEngine:
         if not ev.src_ip:
             return ev
         now = ev.ts
-        actor = self.actors.setdefault(ev.src_ip, Actor(ip=ev.src_ip))
+        self._evict(now)
+        actor = self.actors.get(ev.src_ip)
+        if actor is None:
+            if len(self.actors) >= MAX_ACTORS:
+                self._evict(now, force=True)
+                if len(self.actors) >= MAX_ACTORS:
+                    return ev   # backpressure: bajo flood extremo, descarta
+            actor = self.actors[ev.src_ip] = Actor(ip=ev.src_ip)
+        actor.last_seen = now
         actor.kinds.add(ev.kind)
         if ev.mac:
             actor.last_mac = ev.mac
 
         if ev.kind in ("login_fail", "login_invalid_user"):
             actor.fails.append(now)
-            if ev.user:
+            if ev.user and len(actor.users) < MAX_USERS:
                 actor.users[ev.user] = now
-        if ev.dst_port:
+        if ev.dst_port and len(actor.ports) < MAX_PORTS:
             actor.ports[ev.dst_port] = now
 
         actor.prune(now)

@@ -20,23 +20,29 @@ from .enrichment.resolver import Enricher
 from .correlation.engine import CorrelationEngine
 from .storage.db import EventStore
 from .presentation.terminal import TerminalDashboard
+from .security import drop_privileges, safe_path, valid_iface
 
 
 class Centinela:
     def __init__(self, args) -> None:
+        self.args = args
         self.bus = EventBus()
-        self.enricher = Enricher(oui_db=_load_oui(args.oui),
+        oui = safe_path(args.oui, must_exist=True) if args.oui else None
+        self.enricher = Enricher(oui_db=_load_oui(oui),
                                  resolve_rdns=args.rdns)
         self.engine = CorrelationEngine(self.bus)
-        self.store = EventStore(args.db)
+        self.store = EventStore(safe_path(args.db))
         self.dashboard = TerminalDashboard(self.bus, self.engine)
         self.collectors = []
         if args.simulate:
             self.collectors.append(SimulatorCollector(self.bus))
         if not args.no_authlog:
-            self.collectors.append(AuthLogCollector(self.bus, args.authlog_path))
+            apath = safe_path(args.authlog_path, must_exist=True) \
+                if args.authlog_path else None
+            self.collectors.append(AuthLogCollector(self.bus, apath))
         if args.sniff:
-            self.collectors.append(SnifferCollector(self.bus, args.iface))
+            self.collectors.append(
+                SnifferCollector(self.bus, valid_iface(args.iface)))
 
     async def _pipeline(self) -> None:
         """Consume crudos -> enriquece -> correla -> persiste."""
@@ -61,6 +67,12 @@ class Centinela:
         if not active:
             print("[centinela] Aviso: ningún colector disponible "
                   "(¿permisos? ¿auth.log? ¿scapy?). Corriendo en vacío.")
+        # A-2: soltar privilegios una vez los colectores abrieron sus recursos
+        # privilegiados (socket de captura / fd de auth.log).
+        if not self.args.no_drop:
+            await asyncio.sleep(0.5)
+            if drop_privileges(self.args.user):
+                print(f"[centinela] privilegios soltados a '{self.args.user}'")
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
@@ -100,6 +112,10 @@ def main() -> None:
                    help="resolver DNS inverso en background (más contexto)")
     p.add_argument("--oui", default=None,
                    help="CSV de OUI (prefijo_mac,fabricante) para resolver vendor")
+    p.add_argument("--user", default="nobody",
+                   help="usuario al que soltar privilegios tras abrir recursos")
+    p.add_argument("--no-drop", action="store_true",
+                   help="no soltar privilegios (no recomendado)")
     args = p.parse_args()
     try:
         asyncio.run(Centinela(args).run())

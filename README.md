@@ -58,6 +58,33 @@ Todo fluye como `ThreatEvent` (ver `centinela/core.py`). El bus es async,
 sin dependencias. Añadir una fuente nueva = un archivo en `collectors/` que
 herede de `Collector`.
 
+## Seguridad
+
+Centinela procesa **input hostil** (un atacante remoto controla parcialmente
+`auth.log` vía su username SSH y el rDNS de su IP). El código está endurecido
+contra ese modelo de amenaza —ver [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) para
+la auditoría completa (13 hallazgos) y sus mitigaciones:
+
+- **Anti-spoofing de logs:** regex anclados a `sshd[pid]:`, username con
+  whitelist sin espacios e IP revalidada con `ipaddress` → no se puede inyectar
+  IP/usuario falso desde el nombre de usuario SSH.
+- **Anti-DoS de memoria:** dict de actores con purga por inactividad y tope duro
+  (`MAX_ACTORS`); cachés rDNS con LRU+TTL acotadas; backpressure en el bus.
+- **Menor privilegio:** abre los recursos privilegiados y luego hace
+  `setuid`/`setgid` a `nobody` (`--user`, `--no-drop`). Mejor aún, **no correr
+  como root**: otorga capabilities al binario y lee el log por grupo `adm`:
+  ```bash
+  sudo setcap cap_net_raw,cap_net_admin=eip "$(command -v python3)"
+  sudo usermod -aG adm "$USER"   # acceso a /var/log/auth.log
+  centinela --sniff --iface eth0  # sin sudo
+  ```
+- **Anti-inyección de terminal:** se eliminan secuencias de escape ANSI y se
+  escapa el markup de `rich` en todo string derivado del atacante.
+- **Subprocess seguro:** rutas absolutas + `PATH` controlado (sin hijacking),
+  args como lista (sin `shell=True`).
+- **Persistencia:** SQLite parametrizado (sin SQLi), DB con permisos `0600`,
+  WAL y commits por lote.
+
 ## Roadmap
 
 - [ ] Capa de presentación web (FastAPI + WebSocket) con mapa geo

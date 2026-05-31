@@ -7,6 +7,7 @@ severidad. Si `rich` no está instalado, cae a salida de texto plana.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import deque
 
 from ..core import EventBus, Severity, ThreatEvent
@@ -18,9 +19,23 @@ try:
     from rich.table import Table
     from rich.layout import Layout
     from rich.panel import Panel
+    from rich.markup import escape as _rich_escape
     _HAS_RICH = True
 except Exception:
     _HAS_RICH = False
+
+    def _rich_escape(s):  # type: ignore
+        return s
+
+# A-3: strip de caracteres de control (escapes ANSI/OSC) en todo string que
+# derive del atacante (username, rDNS/PTR, vendor) antes de renderizar.
+_CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def _safe(s, limit: int = 200) -> str:
+    if not s:
+        return "—"
+    return _rich_escape(_CTRL.sub("", str(s))[:limit])
 
 _SEV_STYLE = {
     Severity.INFO: "dim",
@@ -67,7 +82,7 @@ class TerminalDashboard:
             sev = self.engine._sev_from_score(a.score)
             t.add_row(
                 f"[{_SEV_STYLE[sev]}]{a.score:.0f}[/]",
-                a.ip, a.last_mac or "—", "—",
+                _safe(a.ip, 45), _safe(a.last_mac, 17), "—",
                 "wan" if not a.ip.startswith(("10.", "192.168.", "172.")) else "lan",
                 str(len(a.fails)), str(len(a.users)), str(len(a.ports)), "",
             )
@@ -81,15 +96,16 @@ class TerminalDashboard:
         for ev in self.feed:
             style = _SEV_STYLE[Severity(ev.severity)]
             vendor = ev.enrichment.get("vendor")
-            origin = ev.src_ip or "—"
+            origin = _safe(ev.src_ip, 45)
             if ev.mac:
-                origin += f" [{ev.mac}]"
+                origin += f" mac={_safe(ev.mac, 17)}"
             if vendor:
-                origin += f" ({vendor})"
+                origin += f" ({_safe(vendor, 40)})"
             t.add_row(
                 _t.strftime("%H:%M:%S", _t.localtime(ev.ts)),
                 f"[{style}]{Severity(ev.severity).name}[/]",
-                ev.source, ev.kind, origin, ev.message,
+                _safe(ev.source, 16), _safe(ev.kind, 24), origin,
+                _safe(ev.message, 200),
             )
         return Panel(t, border_style="green")
 
@@ -98,8 +114,11 @@ class TerminalDashboard:
         print("[centinela] rich no instalado — modo texto plano")
         while True:
             ev = await queue.get()
-            origin = ev.src_ip or "-"
+            # _safe quita escapes ANSI; en texto plano no hay markup que escapar.
+            origin = _CTRL.sub("", ev.src_ip or "-")
             if ev.mac:
-                origin += f" [{ev.mac}]"
+                origin += f" mac={_CTRL.sub('', ev.mac)}"
+            msg = _CTRL.sub("", ev.message)[:200]
             print(f"{_t.strftime('%H:%M:%S')} {Severity(ev.severity).name:8} "
-                  f"{ev.source:11} {ev.kind:20} {origin:30} {ev.message}")
+                  f"{_CTRL.sub('', ev.source):11} {_CTRL.sub('', ev.kind):20} "
+                  f"{origin:30} {msg}")

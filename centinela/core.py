@@ -53,6 +53,7 @@ class EventBus:
 
     def __init__(self) -> None:
         self._subscribers: list[asyncio.Queue[ThreatEvent]] = []
+        self.dropped = 0  # B-3: eventos descartados bajo presión (posible evasión)
 
     def subscribe(self, maxsize: int = 1000) -> asyncio.Queue[ThreatEvent]:
         q: asyncio.Queue[ThreatEvent] = asyncio.Queue(maxsize=maxsize)
@@ -66,7 +67,8 @@ class EventBus:
             except asyncio.QueueFull:
                 # Bajo presión preferimos descartar lo viejo del consumidor lento.
                 try:
-                    q.get_nowait()
+                    q.get_nowait()       # descarta el más viejo del lento
+                    self.dropped += 1
                     q.put_nowait(event)
                 except asyncio.QueueEmpty:
                     pass
