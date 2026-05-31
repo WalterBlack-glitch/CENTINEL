@@ -1,0 +1,56 @@
+"""Colector de simulación: genera ataques sintéticos para demo/tests.
+
+Permite ver el dashboard y la correlación funcionando sin root, sin scapy y
+sin un servidor real bajo ataque. Útil en desarrollo (Windows incluido).
+"""
+from __future__ import annotations
+
+import asyncio
+import random
+
+from ..core import Severity, ThreatEvent
+from .base import Collector
+
+_USERS = ["root", "admin", "ubuntu", "pi", "postgres", "test", "git", "oracle"]
+_MACS = ["00:1a:2b:3c:4d:5e", "ac:de:48:00:11:22", "f0:9f:c2:aa:bb:cc"]
+
+
+class SimulatorCollector(Collector):
+    name = "simulator"
+
+    def __init__(self, bus, rate: float = 0.3) -> None:
+        super().__init__(bus)
+        self.rate = rate
+        # Un par de "atacantes" persistentes para que la correlación escale.
+        self.attackers = ["203.0.113.7", "198.51.100.42", "192.168.1.66"]
+
+    async def run(self) -> None:
+        while True:
+            await asyncio.sleep(self.rate)
+            ip = random.choice(self.attackers)
+            roll = random.random()
+            if roll < 0.6:
+                ev = ThreatEvent(
+                    kind="login_fail", src_ip=ip, user=random.choice(_USERS),
+                    src_port=random.randint(30000, 60000), severity=Severity.LOW,
+                    message="Fallo de contraseña (sim)", tags={"auth", "ssh"},
+                )
+            elif roll < 0.8:
+                ev = ThreatEvent(
+                    kind="login_invalid_user", src_ip=ip,
+                    user=random.choice(_USERS), severity=Severity.MEDIUM,
+                    message="Usuario inexistente (sim)", tags={"auth", "recon"},
+                )
+            elif roll < 0.95:
+                ev = ThreatEvent(
+                    kind="tcp_syn", src_ip=ip, dst_port=random.randint(1, 9000),
+                    mac=random.choice(_MACS) if ip.startswith("192.168") else None,
+                    severity=Severity.INFO, message="SYN (sim)", tags={"l3"},
+                )
+            else:
+                ev = ThreatEvent(
+                    kind="login_success", src_ip=ip, user="admin",
+                    severity=Severity.INFO, message="Login exitoso (sim)",
+                    tags={"auth"},
+                )
+            await self.emit(ev)

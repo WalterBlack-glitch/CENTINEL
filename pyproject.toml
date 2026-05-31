@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "centinela"
+version = "0.1.0"
+description = "Rastreo multicapa de amenazas en tiempo real (IP/MAC, fuerza bruta, scan, spraying)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Cristóbal Galdames" }]
+keywords = ["security", "ids", "bruteforce", "network", "monitoring"]
+dependencies = []
+
+[project.optional-dependencies]
+ui = ["rich>=13"]
+sniff = ["scapy>=2.5"]
+all = ["rich>=13", "scapy>=2.5"]
+
+[project.scripts]
+centinela = "centinela.app:main"
+
+[tool.setuptools]
+packages = ["centinela", "centinela.collectors", "centinela.enrichment",
+            "centinela.correlation", "centinela.storage", "centinela.presentation"]
