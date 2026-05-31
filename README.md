@@ -129,6 +129,25 @@ Salvaguardas de la respuesta activa (capa `response/`):
 - [x] journald estructurado (elimina el spoofing de logs de raíz)
 - [ ] Exportador para Prometheus/Grafana
 
+## Defensa contra hacking asistido por IA
+
+Los ataques con IA/LLM rompen la detección clásica yendo **low-and-slow
+distribuidos** (cada IP bajo el umbral) y con temporización adaptativa. Centinela
+incorpora detectores que **no dependen de umbrales por-IP** — ver
+[`docs/DEFENSA_IA.md`](docs/DEFENSA_IA.md):
+
+- **Correlación global de campañas:** agrega entre IPs por usuario objetivo
+  (≥8 IPs atacando al mismo user → credential stuffing distribuido) y por subred
+  (/24 IPv4, /64 IPv6 → botnet de subred). Atrapa la botnet aunque cada nodo
+  haga un solo intento.
+- **Timing robótico:** mide el coeficiente de variación de los intervalos; una
+  cadencia demasiado regular delata automatización.
+- **Credenciales-cebo (canary):** `--canary svc_backup,deploy_old` — cualquier
+  intento contra un usuario-trampa es CRÍTICO inmediato.
+
+Estado bajo presión: todas las estructuras son LRU acotadas con purga por
+ventana (no son un vector de DoS de memoria). Cubierto por tests.
+
 ## Tests
 
 Suite de regresión centrada en las defensas de seguridad (anti-spoofing,

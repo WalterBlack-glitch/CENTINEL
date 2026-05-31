@@ -43,7 +43,8 @@ class Centinela:
             if args.geo else None
         self.enricher = Enricher(oui_db=_load_oui(oui),
                                  resolve_rdns=args.rdns, geo=geo)
-        self.engine = CorrelationEngine(self.bus)
+        canary = {u.strip() for u in (args.canary or "").split(",") if u.strip()}
+        self.engine = CorrelationEngine(self.bus, canary_users=canary)
         self.store = EventStore(safe_path(args.db))
         if args.web:
             self.dashboard = WebDashboard(self.bus_out, self.engine,
@@ -144,6 +145,9 @@ def main() -> None:
     p.add_argument("--authlog-path", default=None, help="ruta a auth.log/secure")
     p.add_argument("--rdns", action="store_true",
                    help="resolver DNS inverso en background (más contexto)")
+    p.add_argument("--canary", default=None,
+                   help="usuarios-cebo separados por coma; cualquier intento "
+                        "contra ellos es CRÍTICO (defensa anti-IA)")
     p.add_argument("--oui", default=None,
                    help="CSV de OUI (prefijo_mac,fabricante) para resolver vendor")
     p.add_argument("--web", action="store_true",
