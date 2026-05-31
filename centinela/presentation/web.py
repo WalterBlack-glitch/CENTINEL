@@ -1,4 +1,4 @@
-"""Capa de presentación web: dashboard en vivo vía WebSocket + mapa geo.
+"""Capa de presentación web: dashboard SOC en vivo vía WebSocket + mapa geo.
 
 FastAPI sirve una SPA de un solo archivo (HTML embebido) y un endpoint WebSocket
 que retransmite cada ThreatEvent del bus en tiempo real. Si hay geolocalización
@@ -56,6 +56,19 @@ class WebDashboard:
                 })
             return out
 
+        @app.get("/api/stats")
+        async def stats():
+            actors = self.engine.get_actors()
+            top = actors[0].score if actors else 0.0
+            crit = sum(1 for a in actors
+                       if self.engine._sev_from_score(a.score) >= Severity.HIGH)
+            return {
+                "actors": len(actors),
+                "top_score": top,
+                "high": crit,
+                "dropped": self.bus.dropped,
+            }
+
         @app.websocket("/ws")
         async def ws(sock: WebSocket):
             await sock.accept()
@@ -102,75 +115,178 @@ def _event_payload(ev) -> dict:
 _INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>🛰 Centinela</title>
+<title>Centinela · SOC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-:root{--bg:#0b0f17;--panel:#121826;--line:#1f2a3d;--txt:#cdd6e4;--dim:#6b7a91}
-*{box-sizing:border-box}body{margin:0;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--bg);color:var(--txt)}
-header{padding:10px 16px;background:#0d1320;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:center}
-header h1{font-size:15px;margin:0}#status{margin-left:auto;color:var(--dim)}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5484d;margin-right:6px}
-.dot.on{background:#30a46c}
-.wrap{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);height:calc(100vh - 46px)}
-.col{background:var(--bg);display:flex;flex-direction:column;min-height:0}
-#map{height:46%;border-bottom:1px solid var(--line)}
-.panel{flex:1;overflow:auto;padding:8px}
-.panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:4px 6px}
-table{width:100%;border-collapse:collapse}td,th{padding:3px 6px;text-align:left;white-space:nowrap}
-th{color:var(--dim);font-weight:600;position:sticky;top:0;background:var(--bg)}
-tr{border-bottom:1px solid #131a28}
-.sev0{color:var(--dim)}.sev1{color:#3aa6ff}.sev2{color:#f2c94c}.sev3{color:#ff6b6b}
-.sev4{color:#fff;background:#7a1115}
-.tag{color:var(--dim)}.alert td{font-weight:700}
-.score{font-weight:700;text-align:right}
+:root{
+ --bg:#070b14; --bg2:#0a1120; --panel:rgba(18,26,44,.72); --glass:rgba(255,255,255,.04);
+ --line:rgba(125,150,190,.14); --txt:#dce4f2; --dim:#76859e; --mut:#4a5870;
+ --cyan:#22d3ee; --teal:#2dd4bf; --blue:#3b82f6;
+ --s0:#5b6b82; --s1:#38bdf8; --s2:#fbbf24; --s3:#fb7185; --s4:#ff3b5c;
+ --glow:0 0 0 1px var(--line), 0 8px 30px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+html,body{height:100%}
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:var(--txt);
+ background:
+  radial-gradient(1200px 600px at 80% -10%,rgba(34,211,238,.10),transparent 60%),
+  radial-gradient(900px 500px at 0% 110%,rgba(59,130,246,.10),transparent 55%),
+  linear-gradient(180deg,var(--bg),var(--bg2));
+ background-attachment:fixed;overflow:hidden}
+.mono{font-family:'JetBrains Mono',monospace}
+/* header */
+header{display:flex;align-items:center;gap:18px;padding:14px 22px;
+ border-bottom:1px solid var(--line);background:rgba(7,11,20,.6);backdrop-filter:blur(8px)}
+.brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:17px;letter-spacing:.2px}
+.logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+ background:linear-gradient(135deg,var(--cyan),var(--blue));box-shadow:0 0 18px rgba(34,211,238,.45);
+ font-size:16px}
+.brand small{color:var(--dim);font-weight:600;font-size:11px;letter-spacing:.16em;text-transform:uppercase}
+.live{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:12px;color:var(--dim);
+ padding:7px 13px;border:1px solid var(--line);border-radius:999px;background:var(--glass)}
+.dot{width:8px;height:8px;border-radius:50%;background:#e5484d;box-shadow:0 0 10px #e5484d}
+.dot.on{background:#34d399;box-shadow:0 0 12px #34d399;animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+/* kpis */
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:14px 22px}
+.kpi{position:relative;padding:14px 16px;border-radius:14px;border:1px solid var(--line);
+ background:linear-gradient(180deg,var(--glass),transparent);overflow:hidden}
+.kpi::before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:var(--cyan);opacity:.8}
+.kpi.k1::before{background:var(--blue)} .kpi.k2::before{background:var(--s2)}
+.kpi.k3::before{background:var(--s3)} .kpi.k4::before{background:var(--s4)}
+.kpi .lbl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.12em;font-weight:600}
+.kpi .val{font-size:30px;font-weight:800;line-height:1.1;margin-top:4px;font-family:'JetBrains Mono',monospace}
+.kpi .sub{font-size:11px;color:var(--mut);margin-top:2px}
+/* layout */
+.grid{display:grid;grid-template-columns:1.35fr 1fr;gap:14px;padding:2px 22px 18px;
+ height:calc(100vh - 64px - 92px)}
+.card{display:flex;flex-direction:column;min-height:0;border-radius:16px;border:1px solid var(--line);
+ background:var(--panel);box-shadow:var(--glow);overflow:hidden;backdrop-filter:blur(10px)}
+.card>h2{margin:0;padding:12px 16px;font-size:12px;letter-spacing:.13em;text-transform:uppercase;
+ color:var(--dim);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;font-weight:700}
+.card>h2 .badge{margin-left:auto;font-size:11px;color:var(--cyan);background:rgba(34,211,238,.1);
+ border:1px solid rgba(34,211,238,.25);border-radius:999px;padding:2px 9px}
+.left{display:flex;flex-direction:column;gap:14px}
+#map{height:54%;min-height:230px;border-radius:16px;border:1px solid var(--line);box-shadow:var(--glow);overflow:hidden}
+.leaflet-container{background:#060a12}
+.scroll{overflow:auto;flex:1}
+.scroll::-webkit-scrollbar{width:8px}.scroll::-webkit-scrollbar-thumb{background:#1c2940;border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{position:sticky;top:0;background:rgba(10,17,32,.96);color:var(--dim);font-weight:600;
+ text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;z-index:1}
+td{padding:7px 14px;border-bottom:1px solid rgba(125,150,190,.07);white-space:nowrap}
+tr:hover td{background:rgba(255,255,255,.02)}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;
+ letter-spacing:.04em;font-family:'JetBrains Mono',monospace}
+.p0{color:var(--s0);background:rgba(91,107,130,.16)} .p1{color:var(--s1);background:rgba(56,189,248,.14)}
+.p2{color:var(--s2);background:rgba(251,191,36,.14)} .p3{color:var(--s3);background:rgba(251,113,133,.16)}
+.p4{color:#fff;background:linear-gradient(90deg,#ff3b5c,#b91c3c);box-shadow:0 0 14px rgba(255,59,92,.5)}
+.ip{font-family:'JetBrains Mono',monospace;font-weight:600}
+.tag{color:var(--mut);font-family:'JetBrains Mono',monospace;font-size:11px}
+.feedrow{animation:slidein .35s ease}
+@keyframes slidein{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.alertrow td{background:linear-gradient(90deg,rgba(255,59,92,.10),transparent)!important;font-weight:600}
+.flag{color:var(--s4);font-weight:800}
+/* score bar */
+.scorecell{display:flex;align-items:center;gap:8px;min-width:120px}
+.bar{flex:1;height:6px;border-radius:6px;background:rgba(255,255,255,.06);overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--teal),var(--cyan))}
+.scoreval{font-family:'JetBrains Mono',monospace;font-weight:700;width:30px;text-align:right}
+.geo{color:var(--dim)}
+.cc{display:inline-block;min-width:22px;font-weight:700;color:var(--txt)}
+.empty{padding:26px;text-align:center;color:var(--mut);font-size:13px}
+@media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr;height:auto}}
 </style></head><body>
-<header><h1>🛰 Centinela</h1><span class="tag" id="geoinfo"></span>
-<span id="status"><span class="dot" id="dot"></span><span id="stxt">conectando…</span></span></header>
-<div class="wrap">
-  <div class="col">
-    <div id="map"></div>
-    <div class="panel"><h2>Eventos en vivo</h2>
-      <table><thead><tr><th>hora</th><th>sev</th><th>fuente</th><th>tipo</th>
-      <th>origen</th><th>geo</th><th>mensaje</th></tr></thead><tbody id="feed"></tbody></table>
-    </div>
+<header>
+ <div class="brand"><div class="logo">🛰</div>
+  <div>Centinela<br><small>Threat Tracking · SOC</small></div></div>
+ <div class="live"><span class="dot" id="dot"></span><span id="stxt">conectando…</span></div>
+</header>
+
+<section class="kpis">
+ <div class="kpi"><div class="lbl">Eventos</div><div class="val mono" id="k_total">0</div><div class="sub" id="k_eps">0.0/s</div></div>
+ <div class="kpi k1"><div class="lbl">Actores activos</div><div class="val mono" id="k_actors">0</div><div class="sub">IPs rastreadas</div></div>
+ <div class="kpi k2"><div class="lbl">Amenaza máx.</div><div class="val mono" id="k_top">0</div><div class="sub">score más alto</div></div>
+ <div class="kpi k3"><div class="lbl">Alertas</div><div class="val mono" id="k_alerts">0</div><div class="sub">en esta sesión</div></div>
+ <div class="kpi k4"><div class="lbl">Críticos</div><div class="val mono" id="k_crit">0</div><div class="sub">HIGH / CRITICAL</div></div>
+</section>
+
+<div class="grid">
+ <div class="left">
+  <div id="map"></div>
+  <div class="card" style="flex:1">
+   <h2>📡 Eventos en vivo <span class="badge" id="b_feed">live</span></h2>
+   <div class="scroll"><table><thead><tr>
+     <th>hora</th><th>sev</th><th>fuente</th><th>tipo</th><th>origen</th><th>geo</th><th>detalle</th>
+   </tr></thead><tbody id="feed"></tbody></table>
+   <div class="empty" id="feed_empty">Esperando eventos…</div></div>
   </div>
-  <div class="col"><div class="panel"><h2>Actores por score de amenaza</h2>
-    <table><thead><tr><th>score</th><th>sev</th><th>IP</th><th>MAC</th>
-    <th>fallos</th><th>users</th><th>puertos</th></tr></thead><tbody id="actors"></tbody></table>
-  </div></div>
+ </div>
+ <div class="card">
+  <h2>🎯 Actores por score de amenaza <span class="badge" id="b_actors">top 50</span></h2>
+  <div class="scroll"><table><thead><tr>
+    <th>score</th><th>sev</th><th>IP</th><th>MAC</th><th>fallos</th><th>users</th><th>puertos</th>
+  </tr></thead><tbody id="actors"></tbody></table>
+  <div class="empty" id="act_empty">Sin actores todavía.</div></div>
+ </div>
 </div>
+
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const map=L.map('map',{worldCopyJump:true}).setView([20,0],2);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
- {attribution:'© OpenStreetMap, © CARTO',subdomains:'abcd',maxZoom:7}).addTo(map);
+const SEV=['INFO','LOW','MED','HIGH','CRIT'];
+let total=0,alerts=0,crit=0,win=[];
+// map
+const map=L.map('map',{worldCopyJump:true,zoomControl:false,attributionControl:false}).setView([25,5],2);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:8}).addTo(map);
 const markers={};
-function plot(ip,g,sev){if(!g)return;const k=ip;
- const color=['#6b7a91','#3aa6ff','#f2c94c','#ff6b6b','#ff2d2d'][sev]||'#6b7a91';
- if(markers[k]){markers[k].setStyle({color});return;}
- markers[k]=L.circleMarker([g.lat,g.lon],{radius:6,color,weight:2,fillOpacity:.5})
-  .bindPopup(`<b>${esc(ip)}</b><br>${esc(g.city||'')} ${esc(g.country||'')}`).addTo(map);}
-const tt=t=>new Date(t*1000).toLocaleTimeString();
-function feedRow(e){const tb=$('#feed');const tr=document.createElement('tr');
- if(e.is_alert)tr.className='alert';
- let origin=esc(e.src_ip||'—');if(e.mac)origin+=' <span class="tag">mac='+esc(e.mac)+'</span>';
- if(e.vendor)origin+=' <span class="tag">('+esc(e.vendor)+')</span>';
- const geo=e.geo?esc((e.geo.country||'')+' '+(e.geo.city||'')):'<span class=tag>'+esc(e.scope||'')+'</span>';
- tr.innerHTML=`<td>${tt(e.ts)}</td><td class="sev${e.severity}">${e.sev_name}</td>
-  <td>${esc(e.source)}</td><td>${esc(e.kind)}</td><td>${origin}</td><td>${geo}</td>
-  <td>${esc(e.message)}</td>`;
- tb.prepend(tr);while(tb.children.length>120)tb.lastChild.remove();
- plot(e.src_ip,e.geo,e.severity);}
-async function refreshActors(){try{const r=await fetch('/api/actors');const a=await r.json();
- $('#actors').innerHTML=a.map(x=>`<tr><td class="score sev${x.severity}">${x.score.toFixed(0)}</td>
-  <td class="sev${x.severity}">${['INFO','LOW','MED','HIGH','CRIT'][x.severity]}</td>
-  <td>${esc(x.ip)}</td><td>${esc(x.mac||'—')}</td><td>${x.fails}</td>
-  <td>${x.users}</td><td>${x.ports}</td></tr>`).join('');}catch(e){}}
+function plot(ip,g,sev){if(!g||g.lat==null)return;
+ const col=['#5b6b82','#38bdf8','#fbbf24','#fb7185','#ff3b5c'][sev]||'#5b6b82';
+ if(markers[ip]){markers[ip].setStyle({color:col,fillColor:col});if(sev>=3)pulse(markers[ip]);return;}
+ const m=L.circleMarker([g.lat,g.lon],{radius:6,color:col,fillColor:col,weight:2,fillOpacity:.55})
+  .bindPopup(`<b>${esc(ip)}</b><br>${esc(g.city||'')} ${esc(g.country||'')}`);
+ m.addTo(map);markers[ip]=m;if(sev>=3)pulse(m);}
+function pulse(m){const el=m._path;if(!el)return;el.style.transition='none';el.setAttribute('r',12);
+ el.style.opacity=.9;setTimeout(()=>{el.style.transition='all 1s';el.setAttribute('r',6);el.style.opacity=.55},30);}
+const tt=t=>new Date(t*1000).toLocaleTimeString('es',{hour12:false});
+function feedRow(e){
+ total++;if(e.is_alert)alerts++;if(e.severity>=3)crit++;win.push(Date.now());
+ $('#feed_empty').style.display='none';
+ const tb=$('#feed'),tr=document.createElement('tr');
+ tr.className='feedrow'+(e.is_alert?' alertrow':'');
+ let origin='<span class="ip">'+esc(e.src_ip||'—')+'</span>';
+ if(e.mac)origin+=' <span class="tag">'+esc(e.mac)+'</span>';
+ if(e.vendor)origin+=' <span class="tag">'+esc(e.vendor)+'</span>';
+ let geo=e.geo?('<span class="cc">'+esc(e.geo.country||'··')+'</span> <span class="geo">'+esc(e.geo.city||'')+'</span>')
+   :'<span class="tag">'+esc(e.scope||'—')+'</span>';
+ tr.innerHTML=`<td class="tag">${tt(e.ts)}</td>
+  <td><span class="pill p${e.severity}">${e.sev_name}</span></td>
+  <td class="tag">${esc(e.source)}</td><td>${esc(e.kind)}${e.is_alert?' <span class="flag">⚑</span>':''}</td>
+  <td>${origin}</td><td>${geo}</td><td>${esc(e.message)}</td>`;
+ tb.prepend(tr);while(tb.children.length>140)tb.lastChild.remove();
+ plot(e.src_ip,e.geo,e.severity);
+ $('#k_total').textContent=total;$('#k_alerts').textContent=alerts;$('#k_crit').textContent=crit;}
+async function refresh(){
+ try{const a=await (await fetch('/api/actors')).json();
+  $('#act_empty').style.display=a.length?'none':'block';
+  const mx=Math.max(100,...a.map(x=>x.score));
+  $('#actors').innerHTML=a.map(x=>`<tr>
+    <td><div class="scorecell"><span class="scoreval p${x.severity}" style="background:none">${x.score.toFixed(0)}</span>
+     <div class="bar"><i style="width:${Math.min(100,x.score/mx*100)}%"></i></div></div></td>
+    <td><span class="pill p${x.severity}">${SEV[x.severity]}</span></td>
+    <td class="ip">${esc(x.ip)}</td><td class="tag">${esc(x.mac||'—')}</td>
+    <td>${x.fails}</td><td>${x.users}</td><td>${x.ports}</td></tr>`).join('');
+  const s=await (await fetch('/api/stats')).json();
+  $('#k_actors').textContent=s.actors;$('#k_top').textContent=Math.round(s.top_score);
+ }catch(e){}}
+setInterval(()=>{const now=Date.now();win=win.filter(t=>now-t<3000);
+ $('#k_eps').textContent=(win.length/3).toFixed(1)+'/s';},500);
 function connect(){const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws');
- ws.onopen=()=>{$('#dot').className='dot on';$('#stxt').textContent='en vivo';};
+ ws.onopen=()=>{$('#dot').className='dot on';$('#stxt').textContent='EN VIVO';};
  ws.onclose=()=>{$('#dot').className='dot';$('#stxt').textContent='reconectando…';setTimeout(connect,1500);};
  ws.onmessage=ev=>feedRow(JSON.parse(ev.data));}
-connect();refreshActors();setInterval(refreshActors,2000);
+connect();refresh();setInterval(refresh,2000);
 </script></body></html>"""
