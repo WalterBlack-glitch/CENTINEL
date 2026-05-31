@@ -16,11 +16,20 @@ dependencies = []
 [project.optional-dependencies]
 ui = ["rich>=13"]
 sniff = ["scapy>=2.5"]
-all = ["rich>=13", "scapy>=2.5"]
+web = ["fastapi>=0.110", "uvicorn>=0.27", "websockets>=12"]
+geo = ["geoip2>=4.7"]
+all = ["rich>=13", "scapy>=2.5", "fastapi>=0.110", "uvicorn>=0.27",
+       "websockets>=12", "geoip2>=4.7"]
+test = ["pytest>=7", "pytest-asyncio>=0.23"]
 
 [project.scripts]
 centinela = "centinela.app:main"
 
 [tool.setuptools]
 packages = ["centinela", "centinela.collectors", "centinela.enrichment",
-            "centinela.correlation", "centinela.storage", "centinela.presentation"]
+            "centinela.correlation", "centinela.storage",
+            "centinela.presentation", "centinela.response"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

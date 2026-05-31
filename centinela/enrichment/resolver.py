@@ -51,7 +51,8 @@ _ARP_BIN = _resolve_bin("arp")
 
 class Enricher:
     def __init__(self, oui_db: dict[str, str] | None = None,
-                 resolve_rdns: bool = False) -> None:
+                 resolve_rdns: bool = False, geo=None) -> None:
+        self._geo = geo  # GeoResolver opcional
         self._arp_cache: dict[str, str] = {}
         self._arp_ts = 0.0
         # cache LRU con TTL: ip -> (nombre|None, ts)
@@ -74,6 +75,10 @@ class Enricher:
                     self._schedule_rdns(ev.src_ip)  # no bloquea el pipeline
         if ev.mac:
             ev.enrichment.setdefault("vendor", self._vendor(ev.mac))
+        if self._geo is not None and ev.src_ip and "geo" not in ev.enrichment:
+            g = self._geo.lookup(ev.src_ip)
+            if g:
+                ev.enrichment["geo"] = g
         return ev
 
     def _classify_ip(self, ev: ThreatEvent) -> None:

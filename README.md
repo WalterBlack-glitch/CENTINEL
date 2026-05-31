@@ -15,7 +15,8 @@ El valor no está en un solo detector, sino en cómo se combinan las capas:
 | **2. Enriquecimiento** | IP→MAC (tabla ARP), MAC→fabricante (OUI), rDNS, LAN/WAN | Contexto accionable sin depender de APIs externas |
 | **3. Correlación** | Score por actor en ventana deslizante | Detecta fuerza bruta, **password spraying**, **port scan** y **compromiso** (login OK tras N fallos) |
 | **4. Persistencia** | Event store en SQLite | Auditoría/forense; `top_actors()` |
-| **5. Presentación** | Dashboard en vivo en terminal (`rich`) | Ranking de actores + feed coloreado por severidad |
+| **5. Presentación** | Dashboard en terminal (`rich`), **modo examen**, **dashboard web** (FastAPI+WebSocket+mapa) | Ranking de actores + feed; mapa mundial con geolocalización |
+| **6. Respuesta activa** | Bloqueo en firewall (`nft`/`iptables`) con dry-run | Corrige automáticamente al superar el umbral de score |
 
 > ⚠️ **Sobre la MAC:** una MAC de origen solo es visible para dispositivos en
 > tu mismo dominio de broadcast (tu LAN). Para tráfico de internet, la MAC que
@@ -40,6 +41,12 @@ python -m centinela --simulate
 python -m centinela --simulate --assess          # dry-run: dice qué bloquearía
 sudo centinela --assess --respond-live \
      --block-threshold 70 --allow 1.2.3.4         # bloqueo REAL en firewall
+
+# Dashboard web en vivo (http://127.0.0.1:8787) con mapa geo:
+pip install -e ".[web,geo]"
+python -m centinela --simulate --web
+sudo centinela --sniff --web --web-host 0.0.0.0 \
+     --geo /ruta/GeoLite2-City.mmdb         # plotea el origen en el mapa
 
 # Producción en un servidor Linux:
 sudo centinela --sniff --iface eth0           # logs de auth + captura de paquetes
@@ -116,11 +123,21 @@ Salvaguardas de la respuesta activa (capa `response/`):
 
 ## Roadmap
 
-- [ ] Capa de presentación web (FastAPI + WebSocket) con mapa geo
+- [x] Capa de presentación web (FastAPI + WebSocket) con mapa geo
 - [ ] Hook de threat-intel (AbuseIPDB / listas) opcional
 - [x] Respuesta activa: auto-`iptables`/`nft` drop sobre score crítico
 - [x] journald estructurado (elimina el spoofing de logs de raíz)
 - [ ] Exportador para Prometheus/Grafana
+
+## Tests
+
+Suite de regresión centrada en las defensas de seguridad (anti-spoofing,
+procedencia journald, salvaguardas del firewall, anti-DoS de la correlación):
+
+```bash
+pip install -e ".[test]"
+pytest -q
+```
 
 ## Licencia
 

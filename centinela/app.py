@@ -18,10 +18,12 @@ from .collectors.journald import JournaldCollector
 from .collectors.sniffer import SnifferCollector
 from .collectors.simulator import SimulatorCollector
 from .enrichment.resolver import Enricher
+from .enrichment.geo import GeoResolver
 from .correlation.engine import CorrelationEngine
 from .storage.db import EventStore
 from .presentation.terminal import TerminalDashboard
 from .presentation.assess import AssessmentDashboard
+from .presentation.web import WebDashboard
 from .response.firewall import Firewall
 from .response.responder import Responder
 from .security import drop_privileges, safe_path, valid_iface
@@ -30,20 +32,30 @@ from .security import drop_privileges, safe_path, valid_iface
 class Centinela:
     def __init__(self, args) -> None:
         self.args = args
-        self.bus = EventBus()
+        # Dos buses: bus_in recibe eventos crudos de colectores (y alertas de la
+        # correlación); el pipeline enriquece+correla y republica en bus_out, al
+        # que se suscribe la presentación. Así la UI nunca ve un evento a medio
+        # enriquecer (sin geo/MAC) — elimina la carrera de mutación in-place.
+        self.bus = EventBus()       # entrada
+        self.bus_out = EventBus()   # salida (ya enriquecido)
         oui = safe_path(args.oui, must_exist=True) if args.oui else None
+        geo = GeoResolver(safe_path(args.geo, must_exist=True)) \
+            if args.geo else None
         self.enricher = Enricher(oui_db=_load_oui(oui),
-                                 resolve_rdns=args.rdns)
+                                 resolve_rdns=args.rdns, geo=geo)
         self.engine = CorrelationEngine(self.bus)
         self.store = EventStore(safe_path(args.db))
-        if args.assess:
+        if args.web:
+            self.dashboard = WebDashboard(self.bus_out, self.engine,
+                                          host=args.web_host, port=args.web_port)
+        elif args.assess:
             fw = Firewall(mode="live" if args.respond_live else "dry-run",
                           allowlist=args.allow or [])
             responder = Responder(self.engine, fw, threshold=args.block_threshold)
-            self.dashboard = AssessmentDashboard(self.bus, responder,
+            self.dashboard = AssessmentDashboard(self.bus_out, responder,
                                                  window=args.assess_window)
         else:
-            self.dashboard = TerminalDashboard(self.bus, self.engine)
+            self.dashboard = TerminalDashboard(self.bus_out, self.engine)
         self.collectors = []
         if args.simulate:
             self.collectors.append(SimulatorCollector(self.bus))
@@ -62,16 +74,19 @@ class Centinela:
                 SnifferCollector(self.bus, valid_iface(args.iface)))
 
     async def _pipeline(self) -> None:
-        """Consume crudos -> enriquece -> correla -> persiste."""
+        """Consume crudos de bus_in -> enriquece -> correla -> persiste ->
+        republica enriquecido en bus_out (lo que ve la presentación)."""
         queue = self.bus.subscribe()
         while True:
             ev = await queue.get()
-            if ev.source == "correlation":   # alertas ya procesadas: solo persistir
+            if ev.source == "correlation":   # alerta ya procesada: persiste y reenvía
                 await self.store.save(ev)
+                await self.bus_out.publish(ev)
                 continue
             ev = await self.enricher.enrich(ev)
             ev = await self.engine.process(ev)
             await self.store.save(ev)
+            await self.bus_out.publish(ev)
 
     async def run(self) -> None:
         tasks = [asyncio.create_task(self._pipeline()),
@@ -131,6 +146,12 @@ def main() -> None:
                    help="resolver DNS inverso en background (más contexto)")
     p.add_argument("--oui", default=None,
                    help="CSV de OUI (prefijo_mac,fabricante) para resolver vendor")
+    p.add_argument("--web", action="store_true",
+                   help="dashboard web en vivo (WebSocket + mapa geo)")
+    p.add_argument("--web-host", default="127.0.0.1", help="host del dashboard web")
+    p.add_argument("--web-port", type=int, default=8787, help="puerto del web")
+    p.add_argument("--geo", default=None,
+                   help="ruta a GeoLite2-City.mmdb para geolocalizar IPs")
     p.add_argument("--assess", action="store_true",
                    help="modo examen: monitorea, prioriza, corrige y sigue")
     p.add_argument("--assess-window", type=float, default=15.0,
