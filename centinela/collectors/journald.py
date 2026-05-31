@@ -26,6 +26,7 @@ import re
 import shutil
 
 from ..core import Severity, ThreatEvent
+from ..correlation import signatures
 from .authlog import _IP, _MAX_LINE, _PORT, _USER, _valid_ip
 from .base import Collector
 
@@ -143,4 +144,9 @@ class JournaldCollector(Collector):
                 src_port=int(m["port"]), severity=Severity.INFO,
                 message=f"Login exitoso user={m['user']}",
                 tags={"auth", "ssh", "journald"}, raw=msg.strip())
+        # Fallback: firmas de explotación (Metasploit/escáneres/CVEs).
+        ev = signatures.build_event(msg)
+        if ev:
+            ev.tags.add("journald")
+            return ev
         return None

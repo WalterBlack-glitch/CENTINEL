@@ -129,6 +129,26 @@ Salvaguardas de la respuesta activa (capa `response/`):
 - [x] journald estructurado (elimina el spoofing de logs de raíz)
 - [ ] Exportador para Prometheus/Grafana
 
+## Detección de exploits y CVEs (Metasploit / escáneres)
+
+Los frameworks de explotación (Metasploit, escáneres masivos, kits de RCE) dejan
+rastros característicos en los logs de sshd **antes** de la fase de login.
+`correlation/signatures.py` los detecta con firmas ancladas y de bajo coste
+(verificadas sin ReDoS), cada una con su CVE cuando aplica:
+
+| Firma | Qué detecta | CVE |
+|-------|-------------|-----|
+| `http_probe_on_ssh` | Verbo HTTP/TLS contra el puerto 22 (escáner web) | — |
+| `offensive_tool_banner` | Banners de libssh/paramiko/zgrab/masscan/Nmap/Net::SSH | — |
+| `regresshion_timeout` | Ráfagas de `Timeout before authentication` | CVE-2024-6387 |
+| `libssh_client` | Cliente libssh (posible bypass de auth) | CVE-2018-10933 |
+| `max_auth_exceeded`, `no_kex_match`, `kex_identification_reset` | Fuerza bruta / escaneo / fingerprinting | — |
+
+Las firmas no disparan bloqueos por sí solas: alimentan el score del actor (flag
+`exploit`, +25) y las ráfagas escalan como cualquier evento, así que la respuesta
+activa decide por score + allowlist. Fundamentado en CVEs **explotados
+activamente** que usan SSH como vector inicial (catálogo KEV de CISA, 2024-2026).
+
 ## Defensa contra hacking asistido por IA
 
 Los ataques con IA/LLM rompen la detección clásica yendo **low-and-slow

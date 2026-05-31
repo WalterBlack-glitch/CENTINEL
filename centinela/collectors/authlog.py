@@ -18,6 +18,7 @@ import os
 import re
 
 from ..core import Severity, ThreatEvent
+from ..correlation import signatures as _signatures
 from .base import Collector
 
 # Componentes anclados al formato real de syslog + sshd.
@@ -103,7 +104,8 @@ class AuthLogCollector(Collector):
                 message=f"Login exitoso user={m['user']}",
                 tags={"auth", "ssh"}, raw=line.strip()[:_MAX_LINE],
             )
-        return None
+        # Fallback: firmas de explotación (Metasploit/escáneres/CVEs).
+        return _signatures.build_event(line)
 
     def _open(self, path: str):
         """Abre el log sin seguir symlinks en el componente final (B-4)."""

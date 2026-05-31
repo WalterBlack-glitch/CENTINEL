@@ -111,6 +111,14 @@ class CorrelationEngine:
             if ev.user and len(actor.users) < MAX_USERS:
                 actor.users[ev.user] = now
 
+        # Firmas de explotación (Metasploit/escáneres/CVEs): cuentan para escalar
+        # (p.ej. ráfagas de 'Timeout before authentication' = regreSSHion) y
+        # marcan el actor como intento de explotación.
+        if ev.kind == "exploit_attempt":
+            actor.fails.append(now)
+            actor.flags.add("exploit")
+            ev.tags.add("exploit")
+
         if ev.dst_port and len(actor.ports) < MAX_PORTS:
             actor.ports[ev.dst_port] = now
 
@@ -181,6 +189,8 @@ class CorrelationEngine:
             s += 30
         if "canary" in a.flags:
             s += 60
+        if "exploit" in a.flags:
+            s += 25
         return round(s, 1)
 
     @staticmethod
