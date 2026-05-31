@@ -36,6 +36,11 @@ pip install -e ".[ui]"       # solo dashboard
 # Demo sin root ni Linux (genera ataques sintéticos):
 python -m centinela --simulate
 
+# Modo EXAMEN: monitorea, prioriza lo más grave, lo corrige y sigue.
+python -m centinela --simulate --assess          # dry-run: dice qué bloquearía
+sudo centinela --assess --respond-live \
+     --block-threshold 70 --allow 1.2.3.4         # bloqueo REAL en firewall
+
 # Producción en un servidor Linux:
 sudo centinela --sniff --iface eth0           # logs de auth + captura de paquetes
 centinela --authlog-path /var/log/secure      # RHEL/CentOS
@@ -85,11 +90,33 @@ la auditoría completa (13 hallazgos) y sus mitigaciones:
 - **Persistencia:** SQLite parametrizado (sin SQLi), DB con permisos `0600`,
   WAL y commits por lote.
 
+## Modo examen y respuesta activa
+
+`--assess` convierte Centinela en un bucle de **examen → corrección**:
+
+1. **Examen:** monitorea tráfico en vivo durante `--assess-window` segundos.
+2. **Informe:** ranking de actores por score (IP, MAC, fallos, usuarios, puertos).
+3. **Corrige:** bloquea en firewall (`nft`/`iptables`) a quien supere
+   `--block-threshold`.
+4. **Sigue:** repite, indefinidamente.
+
+Salvaguardas de la respuesta activa (capa `response/`):
+
+- **Dry-run por defecto:** sin `--respond-live` solo *dice* qué bloquearía;
+  no toca tu firewall.
+- **Nunca corta tu red:** jamás bloquea IPs privadas, loopback, link-local ni
+  reservadas; `--allow IP/CIDR` (repetible) define excepciones (tu IP de admin).
+- **Idempotente y con timeout:** cada bloqueo nft expira a las 24 h; no se
+  reintenta una IP ya bloqueada.
+- **`--respond-live` + `--simulate` está prohibido** (no bloquea IPs reales con
+  tráfico de demo).
+
 ## Roadmap
 
 - [ ] Capa de presentación web (FastAPI + WebSocket) con mapa geo
 - [ ] Hook de threat-intel (AbuseIPDB / listas) opcional
-- [ ] Respuesta activa: auto-`iptables`/`nft` drop sobre score crítico
+- [x] Respuesta activa: auto-`iptables`/`nft` drop sobre score crítico
+- [ ] journald estructurado (elimina el spoofing de logs de raíz)
 - [ ] Exportador para Prometheus/Grafana
 
 ## Licencia

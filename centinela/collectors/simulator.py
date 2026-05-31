@@ -21,8 +21,12 @@ class SimulatorCollector(Collector):
     def __init__(self, bus, rate: float = 0.3) -> None:
         super().__init__(bus)
         self.rate = rate
-        # Un par de "atacantes" persistentes para que la correlación escale.
-        self.attackers = ["203.0.113.7", "198.51.100.42", "192.168.1.66"]
+        # "Atacantes" persistentes para que la correlación escale. Se usan IPs
+        # públicas (no rangos de documentación, que Python clasifica como
+        # privados) para que la respuesta activa sea representativa en la demo.
+        # Una IP de LAN incluida para demostrar que NUNCA se bloquea la red local.
+        # NOTA: --respond-live está bloqueado junto a --simulate por seguridad.
+        self.attackers = ["45.135.232.17", "185.234.219.84", "192.168.1.66"]
 
     async def run(self) -> None:
         while True:

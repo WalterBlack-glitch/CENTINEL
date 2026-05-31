@@ -20,6 +20,9 @@ from .enrichment.resolver import Enricher
 from .correlation.engine import CorrelationEngine
 from .storage.db import EventStore
 from .presentation.terminal import TerminalDashboard
+from .presentation.assess import AssessmentDashboard
+from .response.firewall import Firewall
+from .response.responder import Responder
 from .security import drop_privileges, safe_path, valid_iface
 
 
@@ -32,7 +35,14 @@ class Centinela:
                                  resolve_rdns=args.rdns)
         self.engine = CorrelationEngine(self.bus)
         self.store = EventStore(safe_path(args.db))
-        self.dashboard = TerminalDashboard(self.bus, self.engine)
+        if args.assess:
+            fw = Firewall(mode="live" if args.respond_live else "dry-run",
+                          allowlist=args.allow or [])
+            responder = Responder(self.engine, fw, threshold=args.block_threshold)
+            self.dashboard = AssessmentDashboard(self.bus, responder,
+                                                 window=args.assess_window)
+        else:
+            self.dashboard = TerminalDashboard(self.bus, self.engine)
         self.collectors = []
         if args.simulate:
             self.collectors.append(SimulatorCollector(self.bus))
@@ -112,11 +122,24 @@ def main() -> None:
                    help="resolver DNS inverso en background (más contexto)")
     p.add_argument("--oui", default=None,
                    help="CSV de OUI (prefijo_mac,fabricante) para resolver vendor")
+    p.add_argument("--assess", action="store_true",
+                   help="modo examen: monitorea, prioriza, corrige y sigue")
+    p.add_argument("--assess-window", type=float, default=15.0,
+                   help="segundos de cada ciclo de examen")
+    p.add_argument("--block-threshold", type=float, default=70.0,
+                   help="score a partir del cual se bloquea a un actor")
+    p.add_argument("--respond-live", action="store_true",
+                   help="aplicar bloqueos REALES en firewall (default: dry-run)")
+    p.add_argument("--allow", action="append", default=None,
+                   help="IP/red que nunca se bloquea (repetible)")
     p.add_argument("--user", default="nobody",
                    help="usuario al que soltar privilegios tras abrir recursos")
     p.add_argument("--no-drop", action="store_true",
                    help="no soltar privilegios (no recomendado)")
     args = p.parse_args()
+    if args.simulate and args.respond_live:
+        p.error("--respond-live no se permite con --simulate "
+                "(evita bloquear IPs reales con tráfico ficticio)")
     try:
         asyncio.run(Centinela(args).run())
     except KeyboardInterrupt:
