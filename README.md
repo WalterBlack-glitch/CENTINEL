@@ -11,7 +11,7 @@ El valor no está en un solo detector, sino en cómo se combinan las capas:
 
 | Capa | Qué hace | Aporte único |
 |------|----------|--------------|
-| **1. Colectores** | `auth.log`, sniffer de paquetes (scapy), ARP, simulador | Fuentes pluggables; el sniffer ve la **MAC real** de hosts en tu LAN |
+| **1. Colectores** | **journald** (por defecto), `auth.log`, sniffer (scapy), ARP, simulador | Fuentes pluggables; journald aporta **procedencia confiable** y el sniffer ve la **MAC real** de hosts en tu LAN |
 | **2. Enriquecimiento** | IP→MAC (tabla ARP), MAC→fabricante (OUI), rDNS, LAN/WAN | Contexto accionable sin depender de APIs externas |
 | **3. Correlación** | Score por actor en ventana deslizante | Detecta fuerza bruta, **password spraying**, **port scan** y **compromiso** (login OK tras N fallos) |
 | **4. Persistencia** | Event store en SQLite | Auditoría/forense; `top_actors()` |
@@ -70,9 +70,12 @@ Centinela procesa **input hostil** (un atacante remoto controla parcialmente
 contra ese modelo de amenaza —ver [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) para
 la auditoría completa (13 hallazgos) y sus mitigaciones:
 
-- **Anti-spoofing de logs:** regex anclados a `sshd[pid]:`, username con
-  whitelist sin espacios e IP revalidada con `ipaddress` → no se puede inyectar
-  IP/usuario falso desde el nombre de usuario SSH.
+- **Anti-spoofing de logs (eliminado, no solo mitigado):** el colector
+  **journald** valida la *procedencia* de cada registro (`SYSLOG_IDENTIFIER`/
+  `_COMM` = `sshd`, `_UID` = 0) — solo se parsean mensajes que realmente emitió
+  el proceso sshd, así que ningún otro proceso puede inyectar eventos falsos.
+  El fallback a `auth.log` además ancla los regex a `sshd[pid]:`, usa whitelist
+  de username sin espacios y revalida la IP con `ipaddress`.
 - **Anti-DoS de memoria:** dict de actores con purga por inactividad y tope duro
   (`MAX_ACTORS`); cachés rDNS con LRU+TTL acotadas; backpressure en el bus.
 - **Menor privilegio:** abre los recursos privilegiados y luego hace
@@ -116,7 +119,7 @@ Salvaguardas de la respuesta activa (capa `response/`):
 - [ ] Capa de presentación web (FastAPI + WebSocket) con mapa geo
 - [ ] Hook de threat-intel (AbuseIPDB / listas) opcional
 - [x] Respuesta activa: auto-`iptables`/`nft` drop sobre score crítico
-- [ ] journald estructurado (elimina el spoofing de logs de raíz)
+- [x] journald estructurado (elimina el spoofing de logs de raíz)
 - [ ] Exportador para Prometheus/Grafana
 
 ## Licencia

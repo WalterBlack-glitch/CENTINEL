@@ -14,6 +14,7 @@ import argparse
 
 from .core import EventBus
 from .collectors.authlog import AuthLogCollector
+from .collectors.journald import JournaldCollector
 from .collectors.sniffer import SnifferCollector
 from .collectors.simulator import SimulatorCollector
 from .enrichment.resolver import Enricher
@@ -47,9 +48,15 @@ class Centinela:
         if args.simulate:
             self.collectors.append(SimulatorCollector(self.bus))
         if not args.no_authlog:
-            apath = safe_path(args.authlog_path, must_exist=True) \
-                if args.authlog_path else None
-            self.collectors.append(AuthLogCollector(self.bus, apath))
+            # Preferir journald (procedencia confiable) si está disponible;
+            # caer a auth.log en su defecto. --authlog fuerza el archivo plano.
+            jd = JournaldCollector(self.bus)
+            if jd.available() and not args.authlog:
+                self.collectors.append(jd)
+            else:
+                apath = safe_path(args.authlog_path, must_exist=True) \
+                    if args.authlog_path else None
+                self.collectors.append(AuthLogCollector(self.bus, apath))
         if args.sniff:
             self.collectors.append(
                 SnifferCollector(self.bus, valid_iface(args.iface)))
@@ -116,7 +123,9 @@ def main() -> None:
                    help="activar captura de paquetes (requiere root + scapy)")
     p.add_argument("--iface", default=None, help="interfaz para el sniffer")
     p.add_argument("--no-authlog", action="store_true",
-                   help="desactivar colector de auth.log")
+                   help="desactivar el colector de logs de autenticación")
+    p.add_argument("--authlog", action="store_true",
+                   help="forzar lectura de /var/log/auth.log en vez de journald")
     p.add_argument("--authlog-path", default=None, help="ruta a auth.log/secure")
     p.add_argument("--rdns", action="store_true",
                    help="resolver DNS inverso en background (más contexto)")
