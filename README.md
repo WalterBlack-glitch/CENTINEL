@@ -219,6 +219,32 @@ incorpora detectores que **no dependen de umbrales por-IP** — ver
 Estado bajo presión: todas las estructuras son LRU acotadas con purga por
 ventana (no son un vector de DoS de memoria). Cubierto por tests.
 
+## Remediación guiada: te dice cómo arreglarlo
+
+Detectar no basta. Ante un compromiso (o intento), Centinela adjunta a la alerta
+un **playbook accionable** — qué comprobar, qué comando ejecutar y cómo cerrar el
+agujero. Aparece en un cajón **🛠️ Cómo remediar** del dashboard web (con botón
+*copiar* por comando) y en un panel propio de la terminal.
+
+Cada tipo de amenaza tiene su guía: compromiso de cuenta, fuerza bruta, spraying,
+escaneo, canary, timing robótico, credential stuffing, botnet de subred, actor
+atribuido, intento de exploit/CVE y hit de honeypot. Los valores interpolados
+(IP/usuario) se **sanean a un charset seguro**: aunque el username venga de una
+fuente hostil, nunca introduce metacaracteres de shell en un comando copiable.
+
+### Doctor: diagnóstico y arreglo previo
+
+Antes de arrancar, Centinela revisa las causas habituales de fallo según los
+flags pedidos, **arregla lo seguro** (crea el directorio de la BD, endurece
+permisos a 0600) y para el resto imprime el **comando exacto** de arreglo
+(dependencias ausentes, falta de privilegios para sniffer/honeypot, puerto web
+ocupado, GeoLite/KEV inexistentes). No instala nada ni ejecuta acciones de red.
+
+```bash
+centinela --doctor            # solo diagnostica y sale
+centinela --simulate --web    # diagnostica y arranca; --no-doctor para omitir
+```
+
 ## Tests
 
 Suite de regresión centrada en las defensas de seguridad (anti-spoofing,

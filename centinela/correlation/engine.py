@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from ..core import EventBus, Severity, ThreatEvent
 from .ai_defense import CampaignTracker, timing_cv, ROBOTIC_CV, MIN_INTERVALS
 from .cluster import ActorClusterer
+from ..advisor import advise
 
 WINDOW = 120.0       # segundos de memoria por actor
 MAX_ACTORS = 50_000  # tope duro: evita agotamiento de RAM (C-1)
@@ -175,12 +176,15 @@ class CorrelationEngine:
         if is_auth:
             for c in self.campaign.observe(ev.src_ip, ev.user, now):
                 actor.flags.add("campaign")
+                enr = {"sample_ips": c["sample_ips"]}
+                rem = advise(c["kind"], {"ip": ev.src_ip, "user": ev.user or ""})
+                if rem:
+                    enr["remediation"] = rem
                 await self.bus.publish(ThreatEvent(
                     ts=now, source="correlation", kind=f"alert_{c['kind']}",
                     src_ip=ev.src_ip, mac=actor.last_mac, severity=Severity.HIGH,
                     score=actor.score, message=c["message"],
-                    tags={"alert", "ai-defense", c["kind"]},
-                    enrichment={"sample_ips": c["sample_ips"]}))
+                    tags={"alert", "ai-defense", c["kind"]}, enrichment=enr))
 
             # 4) Atribución de actor entre IPs: ¿esta IP es el mismo adversario
             #    que otras, por compartir diccionario/TTPs? (la botnet como uno).
@@ -189,15 +193,19 @@ class CorrelationEngine:
                 actor.score, now)
             if attr:
                 actor.flags.add("attributed")
+                enr = {"cluster_id": attr["cid"],
+                       "sample_ips": attr["sample_ips"],
+                       "users": attr["users"]}
+                rem = advise(attr["kind"], {"ip": ev.src_ip})
+                if rem:
+                    enr["remediation"] = rem
                 await self.bus.publish(ThreatEvent(
                     ts=now, source="correlation",
                     kind=f"alert_{attr['kind']}", src_ip=ev.src_ip,
                     mac=actor.last_mac, severity=Severity.HIGH,
                     score=actor.score, message=attr["message"],
                     tags={"alert", "ai-defense", "attribution"},
-                    enrichment={"cluster_id": attr["cid"],
-                                "sample_ips": attr["sample_ips"],
-                                "users": attr["users"]}))
+                    enrichment=enr))
 
     def _score(self, a: Actor) -> float:
         s = 0.0
@@ -250,8 +258,12 @@ class CorrelationEngine:
         if last is not None and now - last < cooldown:
             return  # ya alertado recientemente; la PRIMERA vez siempre dispara
         a.last_alert[kind] = now
+        enrichment = {}
+        rem = advise(kind, {"ip": a.ip, "user": next(iter(a.users), "")})
+        if rem:
+            enrichment["remediation"] = rem
         await self.bus.publish(ThreatEvent(
             ts=now, source="correlation", kind=f"alert_{kind}",
             src_ip=a.ip, mac=a.last_mac, severity=sev, score=a.score,
-            message=msg, tags={"alert", kind},
+            message=msg, tags={"alert", kind}, enrichment=enrichment,
         ))

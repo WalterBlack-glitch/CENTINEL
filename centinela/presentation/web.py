@@ -116,6 +116,7 @@ def _event_payload(ev) -> dict:
         "scope": ev.enrichment.get("scope"),
         "geo": geo,
         "is_alert": ev.kind.startswith("alert_"),
+        "remediation": ev.enrichment.get("remediation"),
     }
 
 
@@ -222,7 +223,43 @@ tr:hover td{background:rgba(255,255,255,.02)}
  background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--txt)}
 .chip.u{color:var(--s2);background:rgba(251,191,36,.08)}
 .cluster .lbl2{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;margin:7px 0 4px}
-@media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr;height:auto}}
+/* cajón de remediación */
+.remed{position:fixed;right:18px;bottom:18px;width:390px;max-width:calc(100vw - 36px);
+ max-height:74vh;display:flex;flex-direction:column;z-index:50;border-radius:16px;
+ border:1px solid rgba(255,59,92,.4);background:#0c1322;
+ box-shadow:0 0 0 1px rgba(255,59,92,.25),0 18px 50px rgba(0,0,0,.6);
+ transform:translateY(8px);opacity:0;transition:.25s;pointer-events:none}
+.remed.show{transform:none;opacity:1;pointer-events:auto}
+.remed-head{display:flex;align-items:center;gap:9px;padding:12px 14px;font-weight:800;
+ font-size:13px;border-bottom:1px solid var(--line);color:#fff;
+ background:linear-gradient(90deg,rgba(255,59,92,.18),transparent)}
+.remed-head .rcount{font-family:'JetBrains Mono',monospace;font-size:11px;color:#fff;
+ background:linear-gradient(90deg,#ff3b5c,#b91c3c);padding:1px 8px;border-radius:999px}
+.remed-head button{margin-left:auto;background:none;border:0;color:var(--dim);font-size:15px;cursor:pointer}
+.remed-head button:hover{color:#fff}
+.remed-body{overflow:auto;padding:6px;scrollbar-width:thin;scrollbar-color:#1c2940 transparent}
+.rcard{margin:6px;padding:11px 12px;border-radius:12px;border:1px solid var(--line);
+ background:rgba(255,255,255,.02);animation:slidein .3s ease}
+.rcard .rt{font-weight:700;font-size:12.5px;color:var(--txt);display:flex;gap:7px;align-items:baseline}
+.rcard .ru{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;padding:1px 7px;border-radius:999px;
+ font-weight:800}
+.ru.critica{color:#fff;background:linear-gradient(90deg,#ff3b5c,#b91c3c)}
+.ru.alta{color:var(--s3);background:rgba(251,113,133,.16)}
+.ru.media{color:var(--s2);background:rgba(251,191,36,.16)}
+.rcard .rip{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);margin:4px 0}
+.rstep{display:flex;gap:8px;margin:7px 0;font-size:12px;color:var(--txt)}
+.rstep .n{flex:none;width:18px;height:18px;border-radius:50%;background:rgba(34,211,238,.14);
+ color:var(--cyan);font-size:10.5px;font-weight:800;display:grid;place-items:center;margin-top:1px}
+.rcmd{margin:5px 0 0 26px;display:flex;gap:6px;align-items:flex-start}
+.rcmd code{flex:1;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#aef9ff;
+ background:#070d18;border:1px solid var(--line);border-radius:7px;padding:5px 7px;
+ white-space:pre-wrap;word-break:break-all}
+.rcmd button{flex:none;background:rgba(34,211,238,.12);border:1px solid rgba(34,211,238,.3);
+ color:var(--cyan);border-radius:7px;padding:4px 7px;font-size:10px;cursor:pointer;font-weight:700}
+.rcmd button:hover{background:rgba(34,211,238,.22)}
+.rrefs{margin:8px 0 0 26px;font-size:10.5px;color:var(--mut)}
+@media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr;height:auto}
+ .remed{position:static;width:auto;margin:0 22px 18px;max-height:none}}
 </style></head><body>
 <canvas id="matrix"></canvas>
 <header>
@@ -265,6 +302,12 @@ tr:hover td{background:rgba(255,255,255,.02)}
     IPs compartan diccionario/TTPs se agruparán como un solo adversario.</div>
   </div>
  </div>
+</div>
+
+<div class="remed" id="remed">
+ <div class="remed-head">🛠️ Cómo remediar <span class="rcount" id="remed_count">0</span>
+  <button id="remed_close" title="cerrar">✕</button></div>
+ <div class="remed-body" id="remed_body"></div>
 </div>
 
 <script>
@@ -327,7 +370,26 @@ function feedRow(e){
   <td>${origin}</td><td>${geo}</td><td>${esc(e.message)}</td>`;
  tb.prepend(tr);while(tb.children.length>140)tb.lastChild.remove();
  plot(e.src_ip,e.geo,e.severity);
+ if(e.is_alert&&e.remediation)addRemed(e);
  $('#k_total').textContent=total;$('#k_alerts').textContent=alerts;$('#k_crit').textContent=crit;}
+// --- panel de remediación: cada alerta trae su playbook accionable ---
+const remSeen=new Set();let remN=0;
+function copyCmd(b){const c=b.previousElementSibling.textContent;
+ navigator.clipboard&&navigator.clipboard.writeText(c);
+ const o=b.textContent;b.textContent='✓';setTimeout(()=>b.textContent=o,1200);}
+function addRemed(e){
+ const r=e.remediation,key=e.kind+'|'+(e.src_ip||'');
+ if(remSeen.has(key))return; remSeen.add(key);
+ const box=$('#remed'),body=$('#remed_body');box.classList.add('show');
+ const card=document.createElement('div');card.className='rcard';
+ const steps=r.steps.map((s,i)=>`<div class="rstep"><span class="n">${i+1}</span><span>${esc(s.text)}</span></div>`+
+   (s.cmd?`<div class="rcmd"><code>${esc(s.cmd)}</code><button onclick="copyCmd(this)">copiar</button></div>`:'')).join('');
+ const refs=(r.refs&&r.refs.length)?`<div class="rrefs">Ref: ${r.refs.map(esc).join(' · ')}</div>`:'';
+ card.innerHTML=`<div class="rt"><span class="ru ${esc(r.urgency)}">${esc(r.urgency)}</span>${esc(r.title)}</div>`+
+   (e.src_ip?`<div class="rip">origen ${esc(e.src_ip)}</div>`:'')+steps+refs;
+ body.prepend(card);while(body.children.length>12)body.lastChild.remove();
+ remN++;$('#remed_count').textContent=remN;}
+$('#remed_close').onclick=()=>$('#remed').classList.remove('show');
 async function refresh(){
  try{const a=await (await fetch('/api/actors')).json();
   $('#act_empty').style.display=a.length?'none':'block';

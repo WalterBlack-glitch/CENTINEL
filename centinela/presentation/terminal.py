@@ -51,6 +51,8 @@ class TerminalDashboard:
         self.bus = bus
         self.engine = engine
         self.feed: deque[ThreatEvent] = deque(maxlen=15)
+        self.remed: deque = deque(maxlen=4)   # últimos playbooks de remediación
+        self._remed_seen: set = set()
 
     async def run(self) -> None:
         queue = self.bus.subscribe()
@@ -63,15 +65,41 @@ class TerminalDashboard:
             while True:
                 ev = await queue.get()
                 self.feed.appendleft(ev)
+                self._capture_remed(ev)
                 live.update(self._render())
+
+    def _capture_remed(self, ev) -> None:
+        rem = ev.enrichment.get("remediation") if ev.enrichment else None
+        if not rem:
+            return
+        key = f"{ev.kind}|{ev.src_ip}"
+        if key in self._remed_seen:
+            return
+        self._remed_seen.add(key)
+        if len(self._remed_seen) > 256:
+            self._remed_seen.clear()
+        self.remed.appendleft((ev.src_ip, rem))
 
     def _render(self):
         layout = Layout()
-        layout.split_column(
-            Layout(self._actors_table(), name="actors", ratio=1),
-            Layout(self._feed_table(), name="feed", ratio=1),
-        )
+        rows = [Layout(self._actors_table(), name="actors", ratio=2),
+                Layout(self._feed_table(), name="feed", ratio=2)]
+        if self.remed:
+            rows.append(Layout(self._remed_panel(), name="remed", ratio=1))
+        layout.split_column(*rows)
         return layout
+
+    def _remed_panel(self):
+        t = Table(title="🛠  Cómo remediar (acciones recomendadas)", expand=True)
+        for col in ("Urg.", "Amenaza", "IP", "Primeros pasos"):
+            t.add_column(col, overflow="fold")
+        _uc = {"critica": "bold white on red", "alta": "red", "media": "yellow"}
+        for ip, rem in self.remed:
+            steps = "  ".join(f"{i+1}. {_safe(s['text'], 70)}"
+                              for i, s in enumerate(rem["steps"][:3]))
+            t.add_row(f"[{_uc.get(rem['urgency'],'red')}]{rem['urgency']}[/]",
+                      _safe(rem["title"], 50), _safe(ip, 45), steps)
+        return Panel(t, border_style="red")
 
     def _actors_table(self):
         t = Table(title="🛰  Actores por score de amenaza", expand=True)

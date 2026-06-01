@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import argparse
+import sys
 
 from .core import EventBus
 from .collectors.authlog import AuthLogCollector
@@ -200,10 +201,23 @@ def main() -> None:
                    help="usuario al que soltar privilegios tras abrir recursos")
     p.add_argument("--no-drop", action="store_true",
                    help="no soltar privilegios (no recomendado)")
+    p.add_argument("--no-doctor", action="store_true",
+                   help="omitir el diagnóstico previo de errores")
+    p.add_argument("--doctor", action="store_true",
+                   help="solo ejecutar el diagnóstico y salir")
     args = p.parse_args()
     if args.simulate and args.respond_live:
         p.error("--respond-live no se permite con --simulate "
                 "(evita bloquear IPs reales con tráfico ficticio)")
+    if args.doctor:
+        from .doctor import run as doctor_run, has_blocking_errors
+        sys.exit(1 if has_blocking_errors(doctor_run(args)) else 0)
+    if not args.no_doctor:
+        from .doctor import run as doctor_run, has_blocking_errors
+        if has_blocking_errors(doctor_run(args)):
+            print("[centinela] hay errores que impiden arrancar con seguridad. "
+                  "Corrígelos o usa --no-doctor para forzar.")
+            sys.exit(1)
     try:
         asyncio.run(Centinela(args).run())
     except KeyboardInterrupt:
