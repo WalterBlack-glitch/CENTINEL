@@ -143,6 +143,10 @@ body{margin:0;font-family:Inter,system-ui,sans-serif;color:var(--txt);
   radial-gradient(900px 500px at 0% 110%,rgba(59,130,246,.10),transparent 55%),
   linear-gradient(180deg,var(--bg),var(--bg2));
  background-attachment:fixed;overflow:hidden}
+/* lluvia matrix de fondo */
+#matrix{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.22;
+ pointer-events:none;mix-blend-mode:screen}
+header,.kpis,.grid{position:relative;z-index:1}
 .mono{font-family:'JetBrains Mono',monospace}
 /* header */
 header{display:flex;align-items:center;gap:18px;padding:14px 22px;
@@ -219,6 +223,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .cluster .lbl2{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;margin:7px 0 4px}
 @media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr;height:auto}}
 </style></head><body>
+<canvas id="matrix"></canvas>
 <header>
  <div class="brand"><div class="logo">🛰</div>
   <div>Centinela<br><small>Threat Tracking · SOC</small></div></div>
@@ -262,6 +267,28 @@ tr:hover td{background:rgba(255,255,255,.02)}
 </div>
 
 <script>
+// --- lluvia "matrix" de fondo (canvas, sin dependencias) ---
+(function(){
+ const cv=document.getElementById('matrix'),cx=cv.getContext('2d');
+ const glyphs='01<>{}[]/\\|=+*$#@%&·ｱｲｳｴｵｶｷｸｹｺﾊﾋﾌﾍﾎﾔﾕﾖ'.split('');
+ let cols,drops,fs=14;
+ function size(){cv.width=innerWidth;cv.height=innerHeight;
+  cols=Math.floor(cv.width/fs);drops=Array(cols).fill(0).map(()=>Math.random()*-50);}
+ size();addEventListener('resize',size);
+ let last=0;
+ function draw(t){
+  if(t-last>55){last=t;
+   cx.fillStyle='rgba(7,11,20,.10)';cx.fillRect(0,0,cv.width,cv.height);
+   cx.font=fs+"px 'JetBrains Mono',monospace";
+   for(let i=0;i<cols;i++){
+    const ch=glyphs[(Math.random()*glyphs.length)|0],x=i*fs,y=drops[i]*fs;
+    cx.fillStyle=Math.random()<0.04?'#aef9ff':'#22d3ee';
+    cx.fillText(ch,x,y);
+    if(y>cv.height&&Math.random()>0.975)drops[i]=0; else drops[i]++;}
+  }
+  requestAnimationFrame(draw);}
+ requestAnimationFrame(draw);
+})();
 const $=s=>document.querySelector(s);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const SEV=['INFO','LOW','MED','HIGH','CRIT'];
