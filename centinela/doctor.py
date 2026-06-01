@@ -173,12 +173,12 @@ def run(args) -> list[dict]:
                 "Usa --web-host 127.0.0.1 y túnel SSH, o pon un proxy con auth "
                 "delante. (El bloqueo /api/block ya está restringido a loopback.)")
 
-    # 5c) Respuesta activa real vs soltado de privilegios (incompatibles)
+    # 5c) Respuesta activa real vs soltado de privilegios.
+    # La app ya retiene root automáticamente si detecta capas que lo necesitan
+    # (respond-live / rootcheck / netwatch). El aviso es informativo.
     if getattr(args, "respond_live", False) and not getattr(args, "no_drop", False):
-        add(WARN, "--respond-live aplica nft/iptables (requiere root sostenido), "
-                  "pero se soltarán privilegios y el bloqueo real fallará.",
-            "Añade --no-drop para mantener root, o concede CAP_NET_ADMIN al "
-            "proceso. Sin esto, los bloqueos en vivo no se aplicarán.")
+        add(OK, "--respond-live: root se retendrá automáticamente "
+                "(drop omitido por capa que requiere privilegios sostenidos).")
 
     # 5d) NetWatch sin root: visibilidad parcial de procesos
     if getattr(args, "netwatch", False) and not _is_root():

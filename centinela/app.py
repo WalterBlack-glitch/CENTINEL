@@ -31,7 +31,7 @@ from .presentation.assess import AssessmentDashboard
 from .presentation.web import WebDashboard
 from .response.firewall import Firewall
 from .response.responder import Responder
-from .security import drop_privileges, safe_path, valid_iface
+from .security import drop_privileges, layers_need_sustained_root, safe_path, valid_iface
 
 
 class Centinela:
@@ -174,10 +174,36 @@ class Centinela:
                   "(¿permisos? ¿auth.log? ¿scapy?). Corriendo en vacío.")
         # A-2: soltar privilegios una vez los colectores abrieron sus recursos
         # privilegiados (socket de captura / fd de auth.log).
+        #
+        # Bug crítico fixed: ANTES soltaba a 'nobody' incluso cuando la app
+        # arrancaba degradada (sin colectores, capas reventadas, o pidiendo
+        # respond-live/rootcheck/netwatch que necesitan root mantenido). El
+        # operador se quedaba sin privilegios para diagnosticar y los bloqueos
+        # nft fallaban en silencio. Ahora se omite el drop en esos casos y se
+        # explica por qué.
         if not self.args.no_drop:
             await asyncio.sleep(0.5)
-            if drop_privileges(self.args.user):
-                print(f"[centinela] privilegios soltados a '{self.args.user}'")
+            need = layers_need_sustained_root(self.args)
+            if not active:
+                self._note_error("drop_privileges",
+                    RuntimeError("omitido: ninguna capa activa (modo degradado, "
+                                 "root retenido para diagnóstico)"))
+            elif need:
+                print(f"[centinela] privilegios retenidos: requieren root sostenido "
+                      f"-> {', '.join(need)}. Usa --force-drop para forzar el drop.")
+                if getattr(self.args, "force_drop", False):
+                    ok, why = drop_privileges(self.args.user)
+                    print(f"[centinela] drop forzado: {why}")
+            elif self.runtime_errors:
+                print(f"[centinela] privilegios retenidos: ya hay fallos de capa; "
+                      f"root se mantiene para que puedas inspeccionar.")
+            else:
+                ok, why = drop_privileges(self.args.user)
+                if ok:
+                    print(f"[centinela] privilegios soltados a '{self.args.user}'")
+                else:
+                    self._note_error("drop_privileges",
+                        RuntimeError(f"no se pudo soltar ({why}); sigo con root."))
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
@@ -267,6 +293,9 @@ def main() -> None:
                    help="usuario al que soltar privilegios tras abrir recursos")
     p.add_argument("--no-drop", action="store_true",
                    help="no soltar privilegios (no recomendado)")
+    p.add_argument("--force-drop", action="store_true",
+                   help="soltar privilegios aunque haya capas que requieran "
+                        "root sostenido (degradará respond-live/rootcheck/netwatch)")
     p.add_argument("--no-doctor", action="store_true",
                    help="omitir el diagnóstico previo de errores")
     p.add_argument("--doctor", action="store_true",

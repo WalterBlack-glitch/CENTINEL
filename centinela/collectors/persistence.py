@@ -110,6 +110,12 @@ class PersistenceCollector(Collector):
         # Baseline de integridad: path -> (sha256, size, mtime). Se fija en el
         # primer escaneo: a partir de ahí, cualquier divergencia es alerta.
         self._integ_baseline: dict[str, tuple[str, int, float]] | None = None
+        # Baseline de capacidades de fichero (xattr security.capability): un
+        # binario con CAP_NET_RAW/CAP_SYS_ADMIN sin SUID es invisible al escáner
+        # SUID clásico y permite escalada igual de letal. Vector usado por
+        # rootkits modernos (ej. CAP_SYS_PTRACE para leer memoria de otros
+        # procesos sin ser root).
+        self._fcaps_baseline: set[str] | None = None
 
     def available(self) -> bool:
         return os.name == "posix" and os.path.isdir("/etc")
@@ -141,6 +147,7 @@ class PersistenceCollector(Collector):
         out += self._scan_sudoers(now)
         out += self._scan_authkeys(now)
         out += self._scan_integrity(now)
+        out += self._scan_fcaps(now)
         return out[:64]
 
     @staticmethod
@@ -543,6 +550,59 @@ class PersistenceCollector(Collector):
             return h.hexdigest()
         except OSError:
             return None
+
+    # ---- capa 11: capacidades de fichero (xattr security.capability) ----
+
+    def _scan_fcaps(self, now: float) -> list[ThreatEvent]:
+        """Detecta binarios con file capabilities — escalada sin SUID.
+
+        Un atacante puede dejar `python3` con CAP_NET_RAW+CAP_SYS_PTRACE: no
+        aparece en `find -perm /4000`, pero abre sockets crudos y lee memoria
+        de otros procesos como si fuera root. La baseline registra los que ya
+        tienen capacidades al primer escaneo; cualquier NUEVO es alerta.
+        """
+        if not hasattr(os, "getxattr"):
+            return []
+        current = self._fcaps_snapshot()
+        out: list[ThreatEvent] = []
+        if self._fcaps_baseline is None:
+            self._fcaps_baseline = current
+            return out
+        for path in current - self._fcaps_baseline:
+            in_bad = any(path.startswith(d + "/") for d in _BAD_SUID_DIRS)
+            sev = Severity.CRITICAL if in_bad else Severity.HIGH
+            tag = "fcap-bad:" if in_bad else "fcap-new:"
+            if self._fire(now, tag + path):
+                msg = (f"Capacidad de fichero NUEVA en {_clean(path)} "
+                       f"(escalada sin SUID — posible rootkit)")
+                out.append(ThreatEvent(
+                    kind="persistence_fcaps", severity=sev,
+                    message=msg,
+                    tags={"persistence", "privesc", "host", "fcaps"},
+                    enrichment={"path": _clean(path, 200), "fcaps": True}))
+                self._fcaps_baseline.add(path)
+        return out
+
+    def _fcaps_snapshot(self) -> set[str]:
+        found: set[str] = set()
+        scan_dirs = _BIN_DIRS + _BAD_SUID_DIRS
+        for d in scan_dirs:
+            try:
+                for name in os.listdir(d):
+                    p = os.path.join(d, name)
+                    try:
+                        if not os.path.isfile(p):
+                            continue
+                        # getxattr lanza OSError si no existe el atributo
+                        os.getxattr(p, "security.capability")
+                        found.add(p)
+                    except OSError:
+                        continue
+                    if len(found) > _MAX_FILES:
+                        return found
+            except OSError:
+                continue
+        return found
 
     # ---- util ----
 

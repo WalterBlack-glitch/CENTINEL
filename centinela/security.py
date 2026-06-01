@@ -10,32 +10,51 @@ import os
 from pathlib import Path
 
 
-def drop_privileges(user: str = "nobody", group: str = "nogroup") -> bool:
-    """Baja a un usuario sin privilegios. Devuelve True si bajó.
+def drop_privileges(user: str = "nobody", group: str = "nogroup") -> tuple[bool, str]:
+    """Baja a un usuario sin privilegios. Devuelve (bajó, motivo).
 
     Llamar DESPUÉS de abrir el sniffer y el fd de auth.log. No-op fuera de
-    Linux/si no se es root o si el usuario no existe.
-    """
-    if os.name != "posix" or os.getuid() != 0:
-        return False
+    Linux/si no se es root o si el usuario no existe. NUNCA hace SystemExit:
+    el llamador decide qué hacer si falla, así un drop fallido no tumba la
+    app (que es justo el escenario en el que el operador necesita root para
+    diagnosticar)."""
+    if os.name != "posix":
+        return False, "no-posix"
+    if os.getuid() != 0:
+        return False, "no-root"
     try:
         import grp
         import pwd
     except ImportError:
-        return False
+        return False, "sin pwd/grp"
     try:
         pw = pwd.getpwnam(user)
         gr = grp.getgrnam(group)
     except KeyError:
-        return False
-    os.setgroups([])
-    os.setgid(gr.gr_gid)
-    os.setuid(pw.pw_uid)
-    os.umask(0o077)
-    # Verifica que no se pueda re-escalar.
+        return False, f"usuario/grupo '{user}'/'{group}' no existe"
+    try:
+        os.setgroups([])
+        os.setgid(gr.gr_gid)
+        os.setuid(pw.pw_uid)
+        os.umask(0o077)
+    except OSError as exc:
+        return False, f"setuid/setgid falló: {exc}"
     if os.getuid() == 0:
-        raise SystemExit("[centinela] fallo crítico al soltar privilegios")
-    return True
+        return False, "uid sigue siendo 0 tras setuid"
+    return True, f"bajado a {user}"
+
+
+def layers_need_sustained_root(args) -> list[str]:
+    """Capas que requieren root mantenido tras el arranque. Si alguna está
+    activa, NO debe soltarse el privilegio o quedarán degradadas en silencio."""
+    need = []
+    if getattr(args, "respond_live", False):
+        need.append("--respond-live (nft/iptables)")
+    if getattr(args, "rootcheck", False):
+        need.append("--rootcheck (cron/SUID de root, integridad)")
+    if getattr(args, "netwatch", False):
+        need.append("--netwatch (visibilidad total de procesos)")
+    return need
 
 
 def safe_path(p: str, *, must_exist: bool = False,

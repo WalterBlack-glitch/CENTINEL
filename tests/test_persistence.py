@@ -141,6 +141,31 @@ def test_integrity_binario_nuevo_y_desaparecido(tmp_path, monkeypatch):
     assert any(n for _, _, n in kinds)
 
 
+def test_fcaps_baseline_y_nuevo(monkeypatch):
+    if not hasattr(os, "getxattr"):
+        return
+    w = PersistenceCollector(bus=None)
+    snaps = iter([{"/usr/bin/python3"},
+                  {"/usr/bin/python3", "/tmp/.implant"}])
+    monkeypatch.setattr(PersistenceCollector, "_fcaps_snapshot",
+                        lambda self: next(snaps))
+    assert w._scan_fcaps(now=1.0) == []           # fija baseline
+    evs = w._scan_fcaps(now=2.0)
+    assert len(evs) == 1 and evs[0].kind == "persistence_fcaps"
+    assert int(evs[0].severity) == 4              # /tmp -> CRITICAL
+
+
+def test_drop_privileges_devuelve_tupla():
+    from centinela.security import drop_privileges, layers_need_sustained_root
+    ok, why = drop_privileges("nobody")
+    assert isinstance(ok, bool) and isinstance(why, str)
+
+    class A:
+        respond_live = True; rootcheck = False; netwatch = False
+    need = layers_need_sustained_root(A())
+    assert need and "respond-live" in need[0]
+
+
 def test_authkeys_forced_command(tmp_path, monkeypatch):
     if os.name == "nt":
         return
