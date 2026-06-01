@@ -129,7 +129,7 @@ _INDEX_HTML = r"""<!DOCTYPE html>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{
- --bg:#070b14; --bg2:#0a1120; --panel:rgba(18,26,44,.72); --glass:rgba(255,255,255,.04);
+ --bg:#070b14; --bg2:#0a1120; --panel:#0e1525; --glass:rgba(255,255,255,.04);
  --line:rgba(125,150,190,.14); --txt:#dce4f2; --dim:#76859e; --mut:#4a5870;
  --cyan:#22d3ee; --teal:#2dd4bf; --blue:#3b82f6;
  --s0:#5b6b82; --s1:#38bdf8; --s2:#fbbf24; --s3:#fb7185; --s4:#ff3b5c;
@@ -144,8 +144,8 @@ body{margin:0;font-family:Inter,system-ui,sans-serif;color:var(--txt);
   linear-gradient(180deg,var(--bg),var(--bg2));
  background-attachment:fixed;overflow:hidden}
 /* lluvia matrix de fondo */
-#matrix{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.22;
- pointer-events:none;mix-blend-mode:screen}
+#matrix{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.18;
+ pointer-events:none}
 header,.kpis,.grid{position:relative;z-index:1}
 .mono{font-family:'JetBrains Mono',monospace}
 /* header */
@@ -175,7 +175,7 @@ header{display:flex;align-items:center;gap:18px;padding:14px 22px;
 .grid{display:grid;grid-template-columns:1.35fr 1fr;gap:14px;padding:2px 22px 18px;
  height:calc(100vh - 64px - 92px)}
 .card{display:flex;flex-direction:column;min-height:0;border-radius:16px;border:1px solid var(--line);
- background:var(--panel);box-shadow:var(--glow);overflow:hidden;backdrop-filter:blur(10px)}
+ background:var(--panel);box-shadow:var(--glow);overflow:hidden}
 .card>h2{margin:0;padding:12px 16px;font-size:12px;letter-spacing:.13em;text-transform:uppercase;
  color:var(--dim);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;font-weight:700}
 .card>h2 .badge{margin-left:auto;font-size:11px;color:var(--cyan);background:rgba(34,211,238,.1);
