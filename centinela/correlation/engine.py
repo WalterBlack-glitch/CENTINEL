@@ -119,6 +119,13 @@ class CorrelationEngine:
             actor.flags.add("exploit")
             ev.tags.add("exploit")
 
+        # Honeypot: cualquier conexión a un servicio-trampa es maliciosa por
+        # definición; marca el actor para bloqueo inmediato.
+        if ev.kind == "honeypot_hit":
+            actor.fails.append(now)
+            actor.flags.add("honeypot")
+            ev.tags.add("honeypot")
+
         if ev.dst_port and len(actor.ports) < MAX_PORTS:
             actor.ports[ev.dst_port] = now
 
@@ -191,6 +198,8 @@ class CorrelationEngine:
             s += 60
         if "exploit" in a.flags:
             s += 25
+        if "honeypot" in a.flags:
+            s += 70   # tocar el señuelo = malicioso confirmado
         return round(s, 1)
 
     @staticmethod

@@ -17,6 +17,7 @@ from .collectors.authlog import AuthLogCollector
 from .collectors.journald import JournaldCollector
 from .collectors.sniffer import SnifferCollector
 from .collectors.simulator import SimulatorCollector
+from .collectors.honeypot import HoneypotCollector
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -75,6 +76,10 @@ class Centinela:
         if args.sniff:
             self.collectors.append(
                 SnifferCollector(self.bus, valid_iface(args.iface)))
+        if args.honeypot:
+            ports = [p for p in (args.honeypot or "").split(",") if p.strip()]
+            self.collectors.append(
+                HoneypotCollector(self.bus, ports, host=args.honeypot_host))
 
     def _setup_kev(self, args):
         if not (args.kev_cache or args.kev_update):
@@ -161,6 +166,11 @@ def main() -> None:
     p.add_argument("--authlog-path", default=None, help="ruta a auth.log/secure")
     p.add_argument("--rdns", action="store_true",
                    help="resolver DNS inverso en background (más contexto)")
+    p.add_argument("--honeypot", default=None,
+                   help="puertos-trampa separados por coma, p.ej. 2222,2323 "
+                        "(toda conexión es maliciosa)")
+    p.add_argument("--honeypot-host", default="0.0.0.0",
+                   help="interfaz donde escucha el honeypot")
     p.add_argument("--canary", default=None,
                    help="usuarios-cebo separados por coma; cualquier intento "
                         "contra ellos es CRÍTICO (defensa anti-IA)")

@@ -164,6 +164,28 @@ Offline-first: funciona desde la caché en disco; la descarga es opt-in, solo
 desde el host oficial de CISA por HTTPS (TLS verificado, host final validado
 contra redirecciones, tamaño acotado). Actualízalo por cron con `--kev-update`.
 
+## Honeypot (servicio-trampa)
+
+`--honeypot 2222,2323` levanta puertos-señuelo. **Cualquier conexión es maliciosa
+por definición** (ningún cliente legítimo se conecta a un servicio trampa), así
+que es la señal de mayor relación señal/ruido del sistema.
+
+```bash
+centinela --honeypot 2222 --assess --respond-live   # captura y bloquea
+```
+
+- **Baja interacción:** envía un banner SSH falso, captura el banner del cliente
+  (que suele delatar la herramienta — se cruza con las firmas de explotación) y
+  cierra. Nunca ejecuta nada: no hay superficie de RCE.
+- Un toque al honeypot marca el flag `honeypot` (+70 al score) → bloqueable de
+  inmediato por la respuesta activa.
+- Endurecido (escucha en la red): límite global y **por-IP** de conexiones
+  (rechazo inmediato, sin encolar), timeouts, lectura acotada, rate-limit de
+  eventos por IP y saneado de la entrada del atacante. Ver
+  [`AUDIT_HONEYPOT.md`](AUDIT_HONEYPOT.md).
+- **Usa puertos altos (>1024)** para no necesitar root y evitar conflictos con
+  servicios reales. No lo pongas en el puerto 22 real (ahí está tu sshd).
+
 ## Defensa contra hacking asistido por IA
 
 Los ataques con IA/LLM rompen la detección clásica yendo **low-and-slow
