@@ -18,6 +18,7 @@ todo el sistema necesita root (si no, ve lo que su usuario pueda leer).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import re
 import stat
@@ -57,6 +58,28 @@ _DOTFILES = (".bashrc", ".bash_profile", ".profile", ".bash_login",
 _SUDOERS = ("/etc/sudoers",)
 _SUDOERS_DIRS = ("/etc/sudoers.d",)
 
+# Capa de integridad: binarios del sistema que un rootkit clásico troyaniza
+# para ocultarse a sí mismo (ls/ps/netstat sin ver el implante, sshd con
+# puerta trasera, etc.). Mantenemos baseline SHA-256 + tamaño + mtime: el
+# cambio sin que el paquete se haya actualizado es la señal.
+_INTEGRITY_BINS = (
+    "/bin/ls", "/usr/bin/ls",
+    "/bin/ps", "/usr/bin/ps",
+    "/bin/netstat", "/usr/bin/netstat",
+    "/bin/ss", "/usr/bin/ss",
+    "/bin/find", "/usr/bin/find",
+    "/bin/lsof", "/usr/bin/lsof",
+    "/bin/who", "/usr/bin/who", "/usr/bin/w",
+    "/bin/login", "/usr/bin/login",
+    "/usr/bin/passwd", "/usr/bin/sudo", "/usr/bin/su",
+    "/usr/sbin/sshd", "/usr/sbin/crond",
+    "/bin/bash", "/usr/bin/bash", "/bin/sh",
+    "/bin/cat", "/usr/bin/cat",
+    "/bin/grep", "/usr/bin/grep",
+    "/sbin/init", "/usr/sbin/init",
+)
+_INTEG_MAX_BYTES = 64 * 1024 * 1024   # nunca hasheamos más de 64 MB por archivo
+
 # Patrones de backdoor en cron/unit (descarga-ejecuta, reverse shell, ofuscación).
 _BAD = re.compile(
     r"(curl|wget)\b[^\n|]*\|\s*(sh|bash)"      # curl ... | sh
@@ -84,6 +107,9 @@ class PersistenceCollector(Collector):
         self.interval = max(10.0, interval)
         self._suid_baseline: set[str] | None = None
         self._alerted: dict[str, float] = {}
+        # Baseline de integridad: path -> (sha256, size, mtime). Se fija en el
+        # primer escaneo: a partir de ahí, cualquier divergencia es alerta.
+        self._integ_baseline: dict[str, tuple[str, int, float]] | None = None
 
     def available(self) -> bool:
         return os.name == "posix" and os.path.isdir("/etc")
@@ -114,6 +140,7 @@ class PersistenceCollector(Collector):
         out += self._scan_accounts(now)
         out += self._scan_sudoers(now)
         out += self._scan_authkeys(now)
+        out += self._scan_integrity(now)
         return out[:64]
 
     @staticmethod
@@ -409,6 +436,113 @@ class PersistenceCollector(Collector):
                         tags={"persistence", "ssh", "host"},
                         enrichment={"path": _clean(fp, 200), "match": _clean(hit, 200)}))
         return out
+
+    # ---- 10) integridad de binarios del sistema (anti-rootkit clásico) ----
+    #
+    # El rootkit que se respeta troyaniza ls/ps/netstat para no verse a sí mismo
+    # y sshd para tener puerta trasera. Mantenemos una BASELINE (sha256 + tamaño
+    # + mtime) de un puñado de binarios críticos; cualquier divergencia futura
+    # es alerta. Si un binario APARECE donde antes no estaba (nuevo path
+    # critico), también es señal — los rootkits a veces inyectan sus propios.
+
+    def _scan_integrity(self, now: float) -> list[ThreatEvent]:
+        current = self._integrity_snapshot()
+        out: list[ThreatEvent] = []
+        if self._integ_baseline is None:
+            self._integ_baseline = current
+            return out
+        for path, (h, sz, mt) in current.items():
+            old = self._integ_baseline.get(path)
+            if old is None:
+                # Binario NUEVO en una ruta crítica vigilada (raro).
+                if self._fire(now, "integ-new:" + path):
+                    out.append(ThreatEvent(
+                        kind="persistence_integrity", severity=Severity.HIGH,
+                        message=f"Binario crítico aparece donde no estaba: "
+                                f"{_clean(path,140)} (sha256={h[:12]}…)",
+                        tags={"persistence", "rootkit", "integrity", "host"},
+                        enrichment={"path": _clean(path, 200), "sha256": h,
+                                    "size": sz, "nuevo": True}))
+                continue
+            old_h, old_sz, old_mt = old
+            if h != old_h:
+                # Cambió el contenido. Diferencia de tamaño = inflación típica
+                # de un troyano (libc o backdoor inyectado).
+                grew = sz - old_sz
+                detail = f"sha256 {old_h[:12]}…→{h[:12]}…, tamaño {old_sz}→{sz}"
+                if abs(grew) > 1024:
+                    detail += f" (Δ {grew:+d} bytes)"
+                if self._fire(now, "integ:" + path):
+                    out.append(ThreatEvent(
+                        kind="persistence_integrity", severity=Severity.CRITICAL,
+                        message=f"Binario del sistema MODIFICADO sin tu permiso: "
+                                f"{_clean(path,140)} — {detail} — posible "
+                                f"troyanización (rootkit)",
+                        tags={"persistence", "rootkit", "integrity", "host"},
+                        enrichment={"path": _clean(path, 200),
+                                    "sha256_old": old_h, "sha256_new": h,
+                                    "size_old": old_sz, "size_new": sz,
+                                    "mtime_old": old_mt, "mtime_new": mt}))
+                # Actualiza baseline para no alertar en bucle del mismo cambio.
+                self._integ_baseline[path] = (h, sz, mt)
+        # Binario DESAPARECIDO de una ruta crítica (rootkit que esconde su
+        # presencia o atacante que reemplaza con symlink raro).
+        for path in list(self._integ_baseline):
+            if path not in current and self._fire(now, "integ-gone:" + path):
+                out.append(ThreatEvent(
+                    kind="persistence_integrity", severity=Severity.HIGH,
+                    message=f"Binario crítico DESAPARECE: {_clean(path,140)} "
+                            f"— sustituido/ocultado",
+                    tags={"persistence", "rootkit", "integrity", "host"},
+                    enrichment={"path": _clean(path, 200), "desaparecido": True}))
+                # Lo quitamos del baseline para no spamear.
+                self._integ_baseline.pop(path, None)
+        return out
+
+    def _integrity_snapshot(self) -> dict[str, tuple[str, int, float]]:
+        snap: dict[str, tuple[str, int, float]] = {}
+        for p in _INTEGRITY_BINS:
+            try:
+                st = os.lstat(p)
+            except OSError:
+                continue
+            # Solo archivos regulares (no symlinks: el symlink en sí no se
+            # troyaniza, lo importante es el binario al que apunta — pero
+            # un cambio de symlink a un binario distinto SÍ cambia el hash).
+            if not stat.S_ISREG(st.st_mode):
+                # Intenta resolver: si el destino es regular y razonable, hashea.
+                try:
+                    real = os.path.realpath(p)
+                    rst = os.stat(real)
+                    if not stat.S_ISREG(rst.st_mode):
+                        continue
+                    st = rst
+                    p_to_hash = real
+                except OSError:
+                    continue
+            else:
+                p_to_hash = p
+            if st.st_size > _INTEG_MAX_BYTES:
+                continue
+            h = self._sha256(p_to_hash)
+            if h is None:
+                continue
+            snap[p] = (h, st.st_size, st.st_mtime)
+        return snap
+
+    @staticmethod
+    def _sha256(path: str) -> str | None:
+        try:
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                while True:
+                    chunk = f.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    h.update(chunk)
+            return h.hexdigest()
+        except OSError:
+            return None
 
     # ---- util ----
 

@@ -108,6 +108,39 @@ def test_sudoers_nopasswd_all(tmp_path, monkeypatch):
     assert len(evs) == 1 and evs[0].kind == "persistence_sudoers"
 
 
+def test_integrity_baseline_y_modificacion(tmp_path, monkeypatch):
+    # Crea dos "binarios" críticos: ls + ps
+    ls = tmp_path / "ls"; ls.write_bytes(b"original-ls-binary")
+    ps = tmp_path / "ps"; ps.write_bytes(b"original-ps-binary")
+    monkeypatch.setattr(P, "_INTEGRITY_BINS", (str(ls), str(ps)))
+    w = PersistenceCollector(bus=None)
+    # Primer escaneo: fija baseline, no alerta.
+    assert w._scan_integrity(now=1.0) == []
+    assert w._integ_baseline is not None
+    # Modificamos "ls" (troyanización simulada).
+    ls.write_bytes(b"original-ls-binary + trojan payload extra")
+    evs = w._scan_integrity(now=2.0)
+    assert len(evs) == 1
+    assert evs[0].kind == "persistence_integrity"
+    assert int(evs[0].severity) == 4   # CRITICAL
+    assert "MODIFICADO" in evs[0].message
+
+
+def test_integrity_binario_nuevo_y_desaparecido(tmp_path, monkeypatch):
+    a = tmp_path / "a"; a.write_bytes(b"AAAA")
+    b = tmp_path / "b"; b.write_bytes(b"BBBB")
+    monkeypatch.setattr(P, "_INTEGRITY_BINS", (str(a), str(b)))
+    w = PersistenceCollector(bus=None)
+    w._scan_integrity(now=1.0)        # baseline con A y B
+    a.unlink()                         # A desaparece
+    c = tmp_path / "c"; c.write_bytes(b"CCCC")
+    monkeypatch.setattr(P, "_INTEGRITY_BINS", (str(a), str(b), str(c)))
+    evs = w._scan_integrity(now=2.0)
+    kinds = [(e.kind, "DESAPARECE" in e.message, "aparece" in e.message) for e in evs]
+    assert any(d for _, d, _ in kinds)
+    assert any(n for _, _, n in kinds)
+
+
 def test_authkeys_forced_command(tmp_path, monkeypatch):
     if os.name == "nt":
         return

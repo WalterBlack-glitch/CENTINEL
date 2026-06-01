@@ -281,6 +281,10 @@ shell:
 7. **Cuentas**: UID 0 fantasma (además de root) y contraseñas vacías en `shadow`.
 8. **sudoers**: `NOPASSWD: ALL` (escalada silenciosa).
 9. **`authorized_keys`**: forced-command backdoor o fichero world-writable.
+10. **Integridad de binarios del sistema**: baseline SHA-256 + tamaño + mtime de
+    `ls`, `ps`, `netstat`, `ss`, `find`, `lsof`, `sshd`, `bash`, `sudo`… Cualquier
+    binario modificado, aparecido o desaparecido es alerta (rootkit clásico que
+    troyaniza utilidades para ocultarse a sí mismo).
 
 ```bash
 sudo centinela --rootcheck --web                 # cobertura total con root
