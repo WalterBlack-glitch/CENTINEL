@@ -266,6 +266,27 @@ un actor más, y se puede bloquear.
 sudo centinela --netwatch --web      # root = ve TODOS los procesos
 ```
 
+## Vigilancia de persistencia / rootkits (`--rootcheck`) — defensa en capas
+
+Como una cebolla (o un laberinto): muchas capas, cada una vigila un vector de
+persistencia distinto que usa un atacante para **quedarse**. Solo lectura, sin
+shell:
+
+1. **SUID/SGID** nuevos (baseline) o en `/tmp`·`/dev/shm`·`/home`, world-writable u ocultos.
+2. **cron / at** con patrones de backdoor (`curl|sh`, `/dev/tcp/`, `nc -e`, `bash -i`, `base64 -d`).
+3. **systemd** (`.service`/`.timer`) cuyo `ExecStart` ejecuta lo anterior.
+4. **`/etc/ld.so.preload`** — cualquier librería = rootkit candidato (hooking de libc).
+5. **Inicio**: `/etc/profile`, `rc.local`, `profile.d`, `update-motd.d`, `init.d`, reglas **udev**, `modprobe.d`.
+6. **Dotfiles de shell** por usuario: `~/.bashrc`, `~/.profile`, `~/.zshrc`…
+7. **Cuentas**: UID 0 fantasma (además de root) y contraseñas vacías en `shadow`.
+8. **sudoers**: `NOPASSWD: ALL` (escalada silenciosa).
+9. **`authorized_keys`**: forced-command backdoor o fichero world-writable.
+
+```bash
+sudo centinela --rootcheck --web                 # cobertura total con root
+sudo centinela --netwatch --rootcheck --web      # red + host, todo junto
+```
+
 > Como root ve todo el sistema; tras soltar privilegios solo ve los procesos del
 > usuario destino. Para cazar un backdoor que corre como root, ejecútalo como
 > root (o con `CAP_SYS_PTRACE`). Solo lectura: nunca abre sockets ni ejecuta nada.

