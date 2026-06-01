@@ -106,7 +106,13 @@ _BAD = re.compile(
     r"|\bbash\b\s+-i"                           # bash -i
     r"|\bmkfifo\b"                              # fifo reverse shell
     r"|base64\s+-d|b64decode"                   # payload ofuscado
-    r"|/tmp/|/dev/shm/|/var/tmp/",              # ejecuta desde dir efímero
+    # Ejecución desde dir efímero: el path va precedido de ejecución (.,sh,bash,
+    # exec, sourcing) o seguido de cmdline. Evita falsos positivos cuando es
+    # solo un valor de variable (DIR="/tmp/$1" en x11-common).
+    r"|(?:^|[\s;|&`$(])(?:\.|sh|bash|source|exec|/bin/sh|/bin/bash)\s+"
+    r"(?:/tmp/|/dev/shm/|/var/tmp/)\S+"
+    r"|=(?:/tmp/|/dev/shm/|/var/tmp/)\S+"    # systemd ExecStart=/tmp/...
+    r"|^(?:/tmp/|/dev/shm/|/var/tmp/)\S+",   # cron: linea empieza con /tmp/...
     re.IGNORECASE)
 _CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 _MAX_FILES = 8000
@@ -888,9 +894,13 @@ class PersistenceCollector(Collector):
     # ---- capa 16: PIDs ocultos (rootkit que hookea getdents) ----
 
     def _scan_hidden_pids(self, now: float) -> list[ThreatEvent]:
-        """Cross-check: si kill(pid, 0) dice que el PID existe (no ESRCH) pero
-        /proc/<pid> no aparece, el rootkit oculta procesos. Solo intentamos
-        en PIDs razonables y solo si tenemos privilegios."""
+        """Cross-check: si kill(pid, 0) dice que el PID existe pero /proc/<pid>
+        no aparece, posible rootkit. CUIDADO con falsos positivos:
+          - Kernel threads bajo WSL/contenedores a veces no se listan en /proc.
+          - TOCTOU: procesos cortos que mueren entre listdir y kill.
+          - Sólo alerta si: PID >= 1000 (descarta kthreads), confirmamos en DOS
+            escaneos consecutivos, y /proc/<pid> falla incluso al stat directo.
+        """
         if not hasattr(os, "kill") or os.name != "posix":
             return []
         try:
@@ -900,35 +910,39 @@ class PersistenceCollector(Collector):
         if not visible:
             return []
         max_pid = max(visible)
-        # Barrido acotado: hasta max_pid + 1024, pero nunca más de 65536 pasos.
         upper = min(max_pid + 1024, 65536)
-        out: list[ThreatEvent] = []
-        for pid in range(1, upper):
+        suspects: set[int] = set()
+        for pid in range(1000, upper):     # < 1000: kthreads y servicios del sistema
             if pid in visible:
                 continue
             try:
-                os.kill(pid, 0)         # 0 = no envía señal, solo prueba
+                os.kill(pid, 0)
             except ProcessLookupError:
-                continue                # ESRCH: no existe → ok
+                continue
             except PermissionError:
-                # Existe pero no es nuestro: en sistema sano /proc lo lista igual.
                 pass
             except OSError:
                 continue
-            else:
-                pass
-            # Si llegamos aquí, el PID existe pero NO está en /proc.
+            # Doble-check: ¿realmente no hay /proc/<pid>?
+            if os.path.exists(f"/proc/{pid}"):
+                continue
+            suspects.add(pid)
+        # Necesita dos pasadas para alertar (descarta procesos efímeros que
+        # nacieron y murieron entre listdir y kill).
+        prev = getattr(self, "_hidden_pid_prev", set())
+        confirmed = suspects & prev
+        self._hidden_pid_prev = suspects
+        out: list[ThreatEvent] = []
+        for pid in sorted(confirmed)[:8]:
             if pid in self._hidden_pid_alerted:
                 continue
             self._hidden_pid_alerted.add(pid)
             out.append(ThreatEvent(
                 kind="persistence_hidden_pid", severity=Severity.CRITICAL,
                 message=f"PID {pid} existe (kill(0) ok) pero /proc/{pid} no "
-                        f"aparece: rootkit ocultando procesos.",
+                        f"aparece en DOS escaneos: rootkit ocultando procesos.",
                 tags={"persistence", "rootkit", "kernel"},
                 enrichment={"pid": pid}))
-            if len(out) >= 8:
-                break
         return out
 
     # ---- capa 17: programas eBPF pinneados (rootkit moderno) ----
