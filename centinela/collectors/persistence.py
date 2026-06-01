@@ -209,6 +209,12 @@ class PersistenceCollector(Collector):
         if len(self._alerted) > 4096:
             self._alerted = {k: t for k, t in self._alerted.items()
                              if now - t < _TTL}
+        # BUGFIX: si estamos en el grace period, NO escaneamos. Si scaneáramos
+        # y luego filtráramos por "gracia", la baseline se actualizaría con los
+        # cambios reales y nunca volveríamos a alertar de ellos (el SUID nuevo
+        # entraría como legítimo en el primer ciclo). Mejor: esperar.
+        if self._maint and self._maint.in_grace_period():
+            return []
         out: list[ThreatEvent] = []
         # Capas (cebolla): cada una vigila un vector de persistencia distinto.
         out += self._scan_suid(now)
