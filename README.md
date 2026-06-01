@@ -148,6 +148,20 @@ Las firmas no disparan bloqueos por sí solas: alimentan el score del actor (fla
 `exploit`, +25) y las ráfagas escalan como cualquier evento, así que la respuesta
 activa decide por score + allowlist.
 
+### Atribución de actor entre IPs (la botnet como un solo adversario)
+
+La defensa más avanzada de Centinela: en vez de razonar "por IP", agrupa IPs
+distintas en un mismo **adversario** según su huella de comportamiento —el
+diccionario de usuarios objetivo, las técnicas y el perfil de temporización
+compartidos. Un atacante con IA reparte su campaña entre decenas de IPs para
+diluirse; al reconocer la huella común, Centinela las atribuye a una sola
+entidad y te deja defenderte de la campaña entera, no IP por IP.
+
+Cuando ≥5 IPs comparten diccionario/TTPs → `alert_actor_atribuido` y aparecen
+agrupadas en el panel **Adversarios atribuidos** del dashboard web. El algoritmo
+es barato y acotado (índice invertido + Jaccard, sin pairwise O(n²); expulsión
+LRU O(1): ~5 µs/evento incluso bajo un atacante que rota diccionarios).
+
 ### Feed CVE de CISA KEV (gratis, sin API key)
 
 Centinela cruza los CVEs detectados contra el catálogo **KEV de CISA** (Known

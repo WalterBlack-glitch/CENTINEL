@@ -56,6 +56,12 @@ class WebDashboard:
                 })
             return out
 
+        @app.get("/api/clusters")
+        async def clusters():
+            # Adversarios atribuidos: IPs distintas agrupadas en un mismo actor.
+            return [c.traits() for c in
+                    self.engine.clusterer.get_clusters(min_ips=2)[:30]]
+
         @app.get("/api/stats")
         async def stats():
             actors = self.engine.get_actors()
@@ -67,6 +73,7 @@ class WebDashboard:
                 "top_score": top,
                 "high": crit,
                 "dropped": self.bus.dropped,
+                "clusters": len(self.engine.clusterer.get_clusters(min_ips=2)),
             }
 
         @app.websocket("/ws")
@@ -198,6 +205,18 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .geo{color:var(--dim)}
 .cc{display:inline-block;min-width:22px;font-weight:700;color:var(--txt)}
 .empty{padding:26px;text-align:center;color:var(--mut);font-size:13px}
+/* clusters */
+.cluster{margin:8px;padding:11px 13px;border-radius:12px;border:1px solid var(--line);
+ background:linear-gradient(180deg,rgba(255,59,92,.06),transparent)}
+.cluster .top{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+.cluster .cid{font-family:'JetBrains Mono',monospace;font-weight:800;color:var(--s4)}
+.cluster .ipn{margin-left:auto;font-size:11px;color:#fff;background:linear-gradient(90deg,#ff3b5c,#b91c3c);
+ padding:2px 10px;border-radius:999px;font-weight:700;box-shadow:0 0 12px rgba(255,59,92,.4)}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:2px 7px;border-radius:6px;
+ background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--txt)}
+.chip.u{color:var(--s2);background:rgba(251,191,36,.08)}
+.cluster .lbl2{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;margin:7px 0 4px}
 @media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr;height:auto}}
 </style></head><body>
 <header>
@@ -225,12 +244,20 @@ tr:hover td{background:rgba(255,255,255,.02)}
    <div class="empty" id="feed_empty">Esperando eventos…</div></div>
   </div>
  </div>
- <div class="card">
-  <h2>🎯 Actores por score de amenaza <span class="badge" id="b_actors">top 50</span></h2>
-  <div class="scroll"><table><thead><tr>
-    <th>score</th><th>sev</th><th>IP</th><th>MAC</th><th>fallos</th><th>users</th><th>puertos</th>
-  </tr></thead><tbody id="actors"></tbody></table>
-  <div class="empty" id="act_empty">Sin actores todavía.</div></div>
+ <div class="left">
+  <div class="card" style="flex:1.1">
+   <h2>🎯 Actores por score de amenaza <span class="badge" id="b_actors">top 50</span></h2>
+   <div class="scroll"><table><thead><tr>
+     <th>score</th><th>sev</th><th>IP</th><th>MAC</th><th>fallos</th><th>users</th><th>puertos</th>
+   </tr></thead><tbody id="actors"></tbody></table>
+   <div class="empty" id="act_empty">Sin actores todavía.</div></div>
+  </div>
+  <div class="card" style="flex:1">
+   <h2>🧬 Adversarios atribuidos <span class="badge" id="b_clusters">0</span></h2>
+   <div class="scroll" id="clusters"></div>
+   <div class="empty" id="cl_empty">Ninguna botnet atribuida aún. Cuando varias
+    IPs compartan diccionario/TTPs se agruparán como un solo adversario.</div>
+  </div>
  </div>
 </div>
 
@@ -281,6 +308,20 @@ async function refresh(){
     <td>${x.fails}</td><td>${x.users}</td><td>${x.ports}</td></tr>`).join('');
   const s=await (await fetch('/api/stats')).json();
   $('#k_actors').textContent=s.actors;$('#k_top').textContent=Math.round(s.top_score);
+  // Adversarios atribuidos (botnets agrupadas en un solo actor)
+  const cl=await (await fetch('/api/clusters')).json();
+  $('#b_clusters').textContent=cl.length;
+  $('#cl_empty').style.display=cl.length?'none':'block';
+  $('#clusters').innerHTML=cl.map(c=>`<div class="cluster">
+    <div class="top"><span class="cid">#${c.cid}</span>
+      <span>adversario · score ${Math.round(c.score)}</span>
+      <span class="ipn">${c.ip_count} IPs</span></div>
+    <div class="lbl2">IPs del mismo actor</div>
+    <div class="chips">${c.ips.slice(0,16).map(ip=>'<span class="chip">'+esc(ip)+'</span>').join('')}
+      ${c.ip_count>16?'<span class="chip">+'+(c.ip_count-16)+'</span>':''}</div>
+    <div class="lbl2">diccionario compartido</div>
+    <div class="chips">${c.users.slice(0,12).map(u=>'<span class="chip u">'+esc(u)+'</span>').join('')}</div>
+  </div>`).join('');
  }catch(e){}}
 setInterval(()=>{const now=Date.now();win=win.filter(t=>now-t<3000);
  $('#k_eps').textContent=(win.length/3).toFixed(1)+'/s';},500);

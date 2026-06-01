@@ -27,10 +27,24 @@ class SimulatorCollector(Collector):
         # Una IP de LAN incluida para demostrar que NUNCA se bloquea la red local.
         # NOTA: --respond-live está bloqueado junto a --simulate por seguridad.
         self.attackers = ["45.135.232.17", "185.234.219.84", "192.168.1.66"]
+        # "Botnet" de 7 IPs que comparten un mismo diccionario de usuarios: sirve
+        # para que la atribución de actor entre IPs (clustering) se vea en la demo.
+        self.botnet = [f"77.90.{i}.{(i * 37) % 254 + 1}" for i in range(7)]
+        self.botnet_dict = ["root", "admin", "oracle", "postgres", "deploy"]
 
     async def run(self) -> None:
         while True:
             await asyncio.sleep(self.rate)
+            # ~40% del tráfico es la botnet low-and-slow con diccionario
+            # compartido (visible rápido en el panel de atribución de la demo).
+            if random.random() < 0.4:
+                await self.emit(ThreatEvent(
+                    kind="login_fail", src_ip=random.choice(self.botnet),
+                    user=random.choice(self.botnet_dict),
+                    src_port=random.randint(30000, 60000), severity=Severity.LOW,
+                    message="Fallo de contraseña (sim botnet)",
+                    tags={"auth", "ssh"}))
+                continue
             ip = random.choice(self.attackers)
             roll = random.random()
             if roll < 0.6:

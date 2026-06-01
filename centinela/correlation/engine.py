@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 
 from ..core import EventBus, Severity, ThreatEvent
 from .ai_defense import CampaignTracker, timing_cv, ROBOTIC_CV, MIN_INTERVALS
+from .cluster import ActorClusterer
 
 WINDOW = 120.0       # segundos de memoria por actor
 MAX_ACTORS = 50_000  # tope duro: evita agotamiento de RAM (C-1)
@@ -58,6 +59,7 @@ class CorrelationEngine:
         # Defensas anti-IA
         self.canary_users = {u.lower() for u in (canary_users or set())}
         self.campaign = CampaignTracker()
+        self.clusterer = ActorClusterer()   # atribución de actor entre IPs
 
     def _evict(self, now: float, force: bool = False) -> None:
         """Purga actores inactivos (C-1). Throttle: como mucho cada 5 s."""
@@ -179,6 +181,23 @@ class CorrelationEngine:
                     score=actor.score, message=c["message"],
                     tags={"alert", "ai-defense", c["kind"]},
                     enrichment={"sample_ips": c["sample_ips"]}))
+
+            # 4) Atribución de actor entre IPs: ¿esta IP es el mismo adversario
+            #    que otras, por compartir diccionario/TTPs? (la botnet como uno).
+            attr = self.clusterer.assign(
+                ev.src_ip, set(actor.users), set(actor.flags),
+                actor.score, now)
+            if attr:
+                actor.flags.add("attributed")
+                await self.bus.publish(ThreatEvent(
+                    ts=now, source="correlation",
+                    kind=f"alert_{attr['kind']}", src_ip=ev.src_ip,
+                    mac=actor.last_mac, severity=Severity.HIGH,
+                    score=actor.score, message=attr["message"],
+                    tags={"alert", "ai-defense", "attribution"},
+                    enrichment={"cluster_id": attr["cid"],
+                                "sample_ips": attr["sample_ips"],
+                                "users": attr["users"]}))
 
     def _score(self, a: Actor) -> float:
         s = 0.0
