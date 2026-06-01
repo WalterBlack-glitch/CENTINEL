@@ -142,7 +142,8 @@ body{margin:0;font-family:Inter,system-ui,sans-serif;color:var(--txt);
   radial-gradient(1200px 600px at 80% -10%,rgba(34,211,238,.10),transparent 60%),
   radial-gradient(900px 500px at 0% 110%,rgba(59,130,246,.10),transparent 55%),
   linear-gradient(180deg,var(--bg),var(--bg2));
- background-attachment:fixed;overflow:hidden}
+ background-attachment:fixed;overflow-x:hidden;overflow-y:auto;
+ scrollbar-width:thin;scrollbar-color:#1c2940 transparent}
 /* lluvia matrix de fondo */
 #matrix{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.18;
  pointer-events:none}
@@ -183,7 +184,7 @@ header{display:flex;align-items:center;gap:18px;padding:14px 22px;
 .left{display:flex;flex-direction:column;gap:14px}
 #map{height:54%;min-height:230px;border-radius:16px;border:1px solid var(--line);box-shadow:var(--glow);overflow:hidden}
 .leaflet-container{background:#060a12}
-.scroll{overflow:auto;flex:1}
+.scroll{overflow:auto;flex:1;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#1c2940 transparent}
 .scroll::-webkit-scrollbar{width:8px}.scroll::-webkit-scrollbar-thumb{background:#1c2940;border-radius:8px}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 th{position:sticky;top:0;background:rgba(10,17,32,.96);color:var(--dim);font-weight:600;
@@ -294,10 +295,10 @@ const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;
 const SEV=['INFO','LOW','MED','HIGH','CRIT'];
 let total=0,alerts=0,crit=0,win=[];
 // map
-const map=L.map('map',{worldCopyJump:true,zoomControl:false,attributionControl:false,
+const map=L.map('map',{worldCopyJump:false,zoomControl:false,attributionControl:false,
  minZoom:2,maxZoom:8,maxBounds:[[-85,-180],[85,180]],maxBoundsViscosity:1,
- scrollWheelZoom:true,wheelDebounceTime:60,wheelPxPerZoomLevel:140,
- zoomSnap:.5,zoomDelta:.5,zoomAnimation:true}).setView([25,5],2);
+ bounceAtZoomLimits:false,scrollWheelZoom:true,wheelDebounceTime:60,
+ wheelPxPerZoomLevel:140,zoomSnap:.5,zoomDelta:.5,zoomAnimation:true}).setView([25,5],2);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
  {subdomains:'abcd',minZoom:2,maxZoom:8,noWrap:true}).addTo(map);
 const markers={};
@@ -331,18 +332,21 @@ async function refresh(){
  try{const a=await (await fetch('/api/actors')).json();
   $('#act_empty').style.display=a.length?'none':'block';
   const mx=Math.max(100,...a.map(x=>x.score));
+  const aScroll=$('#actors').closest('.scroll'),aTop=aScroll?aScroll.scrollTop:0;
   $('#actors').innerHTML=a.map(x=>`<tr>
     <td><div class="scorecell"><span class="scoreval p${x.severity}" style="background:none">${x.score.toFixed(0)}</span>
      <div class="bar"><i style="width:${Math.min(100,x.score/mx*100)}%"></i></div></div></td>
     <td><span class="pill p${x.severity}">${SEV[x.severity]}</span></td>
     <td class="ip">${esc(x.ip)}</td><td class="tag">${esc(x.mac||'—')}</td>
     <td>${x.fails}</td><td>${x.users}</td><td>${x.ports}</td></tr>`).join('');
+  if(aScroll)aScroll.scrollTop=aTop;
   const s=await (await fetch('/api/stats')).json();
   $('#k_actors').textContent=s.actors;$('#k_top').textContent=Math.round(s.top_score);
   // Adversarios atribuidos (botnets agrupadas en un solo actor)
   const cl=await (await fetch('/api/clusters')).json();
   $('#b_clusters').textContent=cl.length;
   $('#cl_empty').style.display=cl.length?'none':'block';
+  const clTop=$('#clusters').scrollTop;
   $('#clusters').innerHTML=cl.map(c=>`<div class="cluster">
     <div class="top"><span class="cid">#${c.cid}</span>
       <span>adversario · score ${Math.round(c.score)}</span>
@@ -353,6 +357,7 @@ async function refresh(){
     <div class="lbl2">diccionario compartido</div>
     <div class="chips">${c.users.slice(0,12).map(u=>'<span class="chip u">'+esc(u)+'</span>').join('')}</div>
   </div>`).join('');
+  $('#clusters').scrollTop=clTop;
  }catch(e){}}
 setInterval(()=>{const now=Date.now();win=win.filter(t=>now-t<3000);
  $('#k_eps').textContent=(win.length/3).toFixed(1)+'/s';},500);
