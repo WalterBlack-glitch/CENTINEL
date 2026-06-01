@@ -52,8 +52,14 @@ class Centinela:
         self.engine = CorrelationEngine(self.bus, canary_users=canary)
         self.store = EventStore(safe_path(args.db))
         if args.web:
+            # Respuesta activa para el dashboard: dry-run por defecto (registra
+            # sin tocar el firewall); --respond-live aplica nft/iptables de verdad.
+            fw = Firewall(mode="live" if args.respond_live else "dry-run",
+                          allowlist=args.allow or [])
+            responder = Responder(self.engine, fw, threshold=args.block_threshold)
             self.dashboard = WebDashboard(self.bus_out, self.engine,
-                                          host=args.web_host, port=args.web_port)
+                                          host=args.web_host, port=args.web_port,
+                                          responder=responder)
         elif args.assess:
             fw = Firewall(mode="live" if args.respond_live else "dry-run",
                           allowlist=args.allow or [])

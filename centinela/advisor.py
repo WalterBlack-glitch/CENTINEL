@@ -35,10 +35,11 @@ _PLAYBOOKS: dict[str, dict] = {
         "title": "Posible cuenta comprometida (login exitoso tras fuerza bruta)",
         "urgency": "critica",
         "steps": [
+            ("Bloquea la IP atacante en el firewall ahora mismo (o pulsa "
+             "«Bloquear» arriba para que lo haga Centinela).",
+             "sudo nft add rule inet filter input ip saddr {ip} drop"),
             ("Aísla la sesión: revisa logins activos y cierra los sospechosos.",
              "who; w; last -a | head; pkill -KILL -u {user}"),
-            ("Bloquea la IP atacante en el firewall ahora mismo.",
-             "sudo nft add rule inet filter input ip saddr {ip} drop"),
             ("Rota la contraseña de la cuenta y fuerza su caducidad.",
              "sudo passwd {user}; sudo passwd -e {user}"),
             ("Revisa claves SSH y autorizadas no reconocidas.",

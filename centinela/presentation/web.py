@@ -11,14 +11,16 @@ Dependencias (extra "web"): fastapi, uvicorn. Si no están, available()=False.
 """
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import json
 
-from ..core import EventBus, Severity
+from ..core import EventBus, Severity, ThreatEvent
 from ..correlation.engine import CorrelationEngine
 
 try:
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-    from fastapi.responses import HTMLResponse
+    from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+    from fastapi.responses import HTMLResponse, JSONResponse
     import uvicorn
     _HAS_WEB = True
 except Exception:
@@ -27,11 +29,13 @@ except Exception:
 
 class WebDashboard:
     def __init__(self, bus: EventBus, engine: CorrelationEngine,
-                 host: str = "127.0.0.1", port: int = 8787) -> None:
+                 host: str = "127.0.0.1", port: int = 8787,
+                 responder=None) -> None:
         self.bus = bus
         self.engine = engine
         self.host = host
         self.port = port
+        self.responder = responder   # respuesta activa (firewall) opcional
 
     @staticmethod
     def available() -> bool:
@@ -68,13 +72,44 @@ class WebDashboard:
             top = actors[0].score if actors else 0.0
             crit = sum(1 for a in actors
                        if self.engine._sev_from_score(a.score) >= Severity.HIGH)
+            fw = self.responder.fw if self.responder else None
             return {
                 "actors": len(actors),
                 "top_score": top,
                 "high": crit,
                 "dropped": self.bus.dropped,
                 "clusters": len(self.engine.clusterer.get_clusters(min_ips=2)),
+                "blocked": len(fw.blocked) if fw else 0,
+                "mode": (fw.mode if fw else "off"),
             }
+
+        @app.get("/api/blocked")
+        async def blocked():
+            fw = self.responder.fw if self.responder else None
+            return sorted(fw.blocked) if fw else []
+
+        @app.post("/api/block")
+        async def block(req: Request):
+            if not self.responder:
+                return JSONResponse({"ok": False,
+                                     "detail": "respuesta activa no habilitada"})
+            try:
+                body = await req.json()
+                ip = str(body.get("ip", "")).strip()
+            except Exception:
+                ip = ""
+            # Validación estricta del input antes de tocar el firewall.
+            try:
+                ipaddress.ip_address(ip)
+            except ValueError:
+                return JSONResponse({"ok": False, "detail": "IP inválida"})
+            ok, detail = self.responder.fw.block(ip)
+            if ok:
+                await self.bus.publish(ThreatEvent(
+                    source="response", kind="blocked", src_ip=ip,
+                    severity=Severity.HIGH, message=detail,
+                    tags={"response", "blocked"}))
+            return JSONResponse({"ok": ok, "detail": detail})
 
         @app.websocket("/ws")
         async def ws(sock: WebSocket):
@@ -102,6 +137,7 @@ class WebDashboard:
         server = uvicorn.Server(config)
         server.install_signal_handlers = lambda: None  # corre como task anidada
         print(f"[centinela] dashboard web en http://{self.host}:{self.port}")
+        auto = asyncio.create_task(self._autoblock()) if self.responder else None
         try:
             await server.serve()
         except (OSError, SystemExit) as exc:
@@ -110,6 +146,27 @@ class WebDashboard:
             print(f"[centinela] no se pudo abrir el dashboard web en "
                   f"{self.host}:{self.port} ({exc}). Usa --web-port OTRO "
                   f"o cierra el proceso que ocupa el puerto.")
+        finally:
+            if auto:
+                auto.cancel()
+
+    async def _autoblock(self) -> None:
+        """La app bloquea SOLA a los actores que superan el umbral (idempotente).
+        En dry-run solo registra; en modo live aplica nft/iptables de verdad."""
+        while True:
+            await asyncio.sleep(3.0)
+            try:
+                for act in self.responder.remediate():
+                    if act.executed:   # primera vez que se bloquea esta IP
+                        await self.bus.publish(ThreatEvent(
+                            source="response", kind="blocked", src_ip=act.ip,
+                            severity=Severity.HIGH, score=act.score,
+                            message=f"Auto-bloqueo: {act.detail}",
+                            tags={"response", "blocked", "auto"}))
+            except asyncio.CancelledError:
+                raise
+            except Exception:   # noqa: BLE001 — nunca tumbar el dashboard
+                pass
 
 
 def _event_payload(ev) -> dict:
@@ -243,9 +300,30 @@ tr:hover td{background:rgba(255,255,255,.02)}
  background:linear-gradient(90deg,rgba(255,59,92,.18),transparent)}
 .remed-head .rcount{font-family:'JetBrains Mono',monospace;font-size:11px;color:#fff;
  background:linear-gradient(90deg,#ff3b5c,#b91c3c);padding:1px 8px;border-radius:999px}
-.remed-head button{margin-left:auto;background:none;border:0;color:var(--dim);font-size:15px;cursor:pointer}
-.remed-head button:hover{color:#fff}
+.remed-head .hbtns{margin-left:auto;display:flex;gap:4px}
+.remed-head button{background:none;border:0;color:var(--dim);font-size:15px;cursor:pointer;
+ width:24px;height:24px;border-radius:6px;line-height:1}
+.remed-head button:hover{color:#fff;background:rgba(255,255,255,.06)}
+.remed.min{max-height:none}
+.remed.min .remed-body{display:none}
+.remed-reopen{position:fixed;right:18px;bottom:18px;z-index:51;display:none;align-items:center;gap:7px;
+ background:linear-gradient(90deg,#ff3b5c,#b91c3c);color:#fff;border:0;border-radius:999px;
+ padding:10px 15px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(255,59,92,.45)}
+.remed-reopen.show{display:flex}
 .remed-body{overflow:auto;padding:6px;scrollbar-width:thin;scrollbar-color:#1c2940 transparent}
+/* botón bloquear */
+.blk{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;cursor:pointer;
+ padding:3px 9px;border-radius:7px;border:1px solid rgba(255,59,92,.4);
+ background:rgba(255,59,92,.12);color:var(--s3)}
+.blk:hover{background:rgba(255,59,92,.24);color:#fff}
+.blk:disabled{opacity:.5;cursor:default;border-color:var(--line);color:var(--mut);background:rgba(255,255,255,.04)}
+.blk.bgood{border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.12);color:#34d399}
+.bchip{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);
+ padding:7px 13px;border:1px solid var(--line);border-radius:999px;background:var(--glass)}
+.bchip b{color:#fff;font-family:'JetBrains Mono',monospace}
+.bchip .md{font-size:10px;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:999px;font-weight:800}
+.md.live{color:#fff;background:linear-gradient(90deg,#ff3b5c,#b91c3c)}
+.md.dryrun{color:var(--s2);background:rgba(251,191,36,.16)}
 .rcard{margin:6px;padding:11px 12px;border-radius:12px;border:1px solid var(--line);
  background:rgba(255,255,255,.02);animation:slidein .3s ease}
 .rcard .rt{font-weight:700;font-size:12.5px;color:var(--txt);display:flex;gap:7px;align-items:baseline}
@@ -266,6 +344,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
  color:var(--cyan);border-radius:7px;padding:4px 7px;font-size:10px;cursor:pointer;font-weight:700}
 .rcmd button:hover{background:rgba(34,211,238,.22)}
 .rrefs{margin:8px 0 0 26px;font-size:10.5px;color:var(--mut)}
+.rblock{margin:9px 0 2px;width:100%;background:linear-gradient(90deg,#ff3b5c,#b91c3c);
+ color:#fff;border:0;border-radius:9px;padding:8px;font-weight:800;font-size:12px;cursor:pointer}
+.rblock:hover{filter:brightness(1.1)}
+.rblock:disabled{background:rgba(52,211,153,.18);color:#34d399;cursor:default}
 @media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr;height:auto}
  .remed{position:static;width:auto;margin:0 22px 18px;max-height:none}}
 </style></head><body>
@@ -273,6 +355,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <header>
  <div class="brand"><div class="logo">🛰</div>
   <div>Centinela<br><small>Threat Tracking · SOC</small></div></div>
+ <div class="bchip" id="bchip" style="margin-left:auto">🛡 <b id="b_blocked">0</b> bloqueadas
+  <span class="md dryrun" id="b_mode">off</span></div>
  <div class="live"><span class="dot" id="dot"></span><span id="stxt">conectando…</span></div>
 </header>
 
@@ -299,7 +383,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <div class="card" style="flex:1.1">
    <h2>🎯 Actores por score de amenaza <span class="badge" id="b_actors">top 50</span></h2>
    <div class="scroll"><table><thead><tr>
-     <th>score</th><th>sev</th><th>IP</th><th>MAC</th><th>fallos</th><th>users</th><th>puertos</th>
+     <th>score</th><th>sev</th><th>IP</th><th>MAC</th><th>fallos</th><th>users</th><th>puertos</th><th>acción</th>
    </tr></thead><tbody id="actors"></tbody></table>
    <div class="empty" id="act_empty">Sin actores todavía.</div></div>
   </div>
@@ -314,9 +398,12 @@ tr:hover td{background:rgba(255,255,255,.02)}
 
 <div class="remed" id="remed">
  <div class="remed-head">🛠️ Cómo remediar <span class="rcount" id="remed_count">0</span>
-  <button id="remed_close" title="cerrar">✕</button></div>
+  <span class="hbtns">
+   <button id="remed_min" title="minimizar">▁</button>
+   <button id="remed_close" title="cerrar">✕</button></span></div>
  <div class="remed-body" id="remed_body"></div>
 </div>
+<button class="remed-reopen" id="remed_reopen">🛠️ Remediación <span id="reopen_n">0</span></button>
 
 <script>
 // --- lluvia "matrix" de fondo (canvas, sin dependencias) ---
@@ -345,6 +432,20 @@ const $=s=>document.querySelector(s);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const SEV=['INFO','LOW','MED','HIGH','CRIT'];
 let total=0,alerts=0,crit=0,win=[];
+// --- respuesta activa: la app puede bloquear IPs (boton o auto-bloqueo) ---
+let blockedSet=new Set();
+function blkBtn(ip){return blockedSet.has(ip)
+ ? '<button class="blk bgood" disabled title="ya bloqueada">✓ bloqueada</button>'
+ : '<button class="blk" data-ip="'+esc(ip)+'">🛡 bloquear</button>';}
+async function block(ip,btn){
+ if(btn){btn.disabled=true;btn.textContent='…';}
+ try{const r=await(await fetch('/api/block',{method:'POST',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({ip})})).json();
+  if(r.ok)blockedSet.add(ip);
+  if(btn){btn.classList.toggle('bgood',!!r.ok);btn.disabled=!!r.ok;
+   btn.textContent=r.ok?'✓ bloqueada':'✕';btn.title=r.detail||'';
+   if(!r.ok)setTimeout(()=>{btn.disabled=false;btn.textContent='🛡 bloquear';},1800);}
+ }catch(e){if(btn){btn.disabled=false;btn.textContent='🛡 bloquear';}}}
 // map
 const map=L.map('map',{worldCopyJump:false,zoomControl:false,attributionControl:false,
  minZoom:2,maxZoom:8,maxBounds:[[-85,-180],[85,180]],maxBoundsViscosity:1,
@@ -393,13 +494,28 @@ function addRemed(e){
  const steps=r.steps.map((s,i)=>`<div class="rstep"><span class="n">${i+1}</span><span>${esc(s.text)}</span></div>`+
    (s.cmd?`<div class="rcmd"><code>${esc(s.cmd)}</code><button onclick="copyCmd(this)">copiar</button></div>`:'')).join('');
  const refs=(r.refs&&r.refs.length)?`<div class="rrefs">Ref: ${r.refs.map(esc).join(' · ')}</div>`:'';
+ const bbtn=e.src_ip?`<button class="rblock" data-ip="${esc(e.src_ip)}">🛡 Bloquear ${esc(e.src_ip)} ahora</button>`:'';
  card.innerHTML=`<div class="rt"><span class="ru ${esc(r.urgency)}">${esc(r.urgency)}</span>${esc(r.title)}</div>`+
-   (e.src_ip?`<div class="rip">origen ${esc(e.src_ip)}</div>`:'')+steps+refs;
+   (e.src_ip?`<div class="rip">origen ${esc(e.src_ip)}</div>`:'')+bbtn+steps+refs;
  body.prepend(card);while(body.children.length>12)body.lastChild.remove();
- remN++;$('#remed_count').textContent=remN;}
-$('#remed_close').onclick=()=>$('#remed').classList.remove('show');
+ remN++;$('#remed_count').textContent=remN;$('#reopen_n').textContent=remN;
+ $('#remed_reopen').classList.remove('show');}
+// delegación: botón bloquear en actores y en remediación (IP en data-ip)
+$('#actors').addEventListener('click',ev=>{const b=ev.target.closest('.blk');
+ if(b&&b.dataset.ip)block(b.dataset.ip,b);});
+$('#remed_body').addEventListener('click',ev=>{const b=ev.target.closest('.rblock');
+ if(b&&b.dataset.ip)block(b.dataset.ip,b);});
+// cajón: minimizar / cerrar / reabrir (para no tapar las IPs)
+$('#remed_min').onclick=()=>$('#remed').classList.toggle('min');
+$('#remed_close').onclick=()=>{$('#remed').classList.remove('show');
+ $('#remed_reopen').classList.add('show');};
+$('#remed_reopen').onclick=()=>{$('#remed').classList.add('show');
+ $('#remed').classList.remove('min');$('#remed_reopen').classList.remove('show');};
 async function refresh(){
- try{const a=await (await fetch('/api/actors')).json();
+ try{
+  // IPs ya bloqueadas (para pintar los botones) antes de render de actores.
+  try{blockedSet=new Set(await (await fetch('/api/blocked')).json());}catch(_){}
+  const a=await (await fetch('/api/actors')).json();
   $('#act_empty').style.display=a.length?'none':'block';
   const mx=Math.max(100,...a.map(x=>x.score));
   const aScroll=$('#actors').closest('.scroll'),aTop=aScroll?aScroll.scrollTop:0;
@@ -408,10 +524,15 @@ async function refresh(){
      <div class="bar"><i style="width:${Math.min(100,x.score/mx*100)}%"></i></div></div></td>
     <td><span class="pill p${x.severity}">${SEV[x.severity]}</span></td>
     <td class="ip">${esc(x.ip)}</td><td class="tag">${esc(x.mac||'—')}</td>
-    <td>${x.fails}</td><td>${x.users}</td><td>${x.ports}</td></tr>`).join('');
+    <td>${x.fails}</td><td>${x.users}</td><td>${x.ports}</td>
+    <td>${blkBtn(x.ip)}</td></tr>`).join('');
   if(aScroll)aScroll.scrollTop=aTop;
   const s=await (await fetch('/api/stats')).json();
   $('#k_actors').textContent=s.actors;$('#k_top').textContent=Math.round(s.top_score);
+  $('#b_blocked').textContent=s.blocked||0;
+  const md=$('#b_mode');
+  md.textContent=s.mode==='live'?'LIVE':(s.mode==='dry-run'?'DRY-RUN':'off');
+  md.className='md '+(s.mode==='live'?'live':'dryrun');
   // Adversarios atribuidos (botnets agrupadas en un solo actor)
   const cl=await (await fetch('/api/clusters')).json();
   $('#b_clusters').textContent=cl.length;
