@@ -100,8 +100,16 @@ class WebDashboard:
                                 port=self.port, log_level="warning",
                                 access_log=False)
         server = uvicorn.Server(config)
+        server.install_signal_handlers = lambda: None  # corre como task anidada
         print(f"[centinela] dashboard web en http://{self.host}:{self.port}")
-        await server.serve()
+        try:
+            await server.serve()
+        except (OSError, SystemExit) as exc:
+            # Puerto ocupado u otro fallo de bind: degrada con mensaje claro
+            # en vez de tumbar la app con un traceback de uvicorn.
+            print(f"[centinela] no se pudo abrir el dashboard web en "
+                  f"{self.host}:{self.port} ({exc}). Usa --web-port OTRO "
+                  f"o cierra el proceso que ocupa el puerto.")
 
 
 def _event_payload(ev) -> dict:

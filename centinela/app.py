@@ -130,12 +130,16 @@ class Centinela:
             print(f"[centinela] aviso: {msg} (capa degradada, app sigue)")
 
     async def _guard(self, name: str, coro) -> None:
-        """Envuelve una capa: si revienta, se desactiva sin tumbar el resto."""
+        """Envuelve una capa: si revienta, se desactiva sin tumbar el resto.
+
+        Captura BaseException (no solo Exception) porque uvicorn lanza SystemExit
+        al fallar el bind del puerto: eso NO debe tumbar la app entera. Solo se
+        repropagan la cancelación y el Ctrl+C."""
         try:
             await coro
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, KeyboardInterrupt):
             raise
-        except Exception as exc:   # noqa: BLE001
+        except BaseException as exc:   # noqa: BLE001
             self._note_error(f"capa '{name}'", exc)
 
     async def run(self) -> None:
