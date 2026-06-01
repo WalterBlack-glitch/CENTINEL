@@ -19,6 +19,7 @@ from .collectors.journald import JournaldCollector
 from .collectors.sniffer import SnifferCollector
 from .collectors.simulator import SimulatorCollector
 from .collectors.honeypot import HoneypotCollector
+from .collectors.netwatch import NetWatchCollector
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -88,6 +89,9 @@ class Centinela:
             ports = [p for p in (args.honeypot or "").split(",") if p.strip()]
             self.collectors.append(
                 HoneypotCollector(self.bus, ports, host=args.honeypot_host))
+        if args.netwatch:
+            self.collectors.append(
+                NetWatchCollector(self.bus, interval=args.netwatch_interval))
 
     def _setup_kev(self, args):
         if not (args.kev_cache or args.kev_update):
@@ -220,6 +224,11 @@ def main() -> None:
                         "(toda conexión es maliciosa)")
     p.add_argument("--honeypot-host", default="0.0.0.0",
                    help="interfaz donde escucha el honeypot")
+    p.add_argument("--netwatch", action="store_true",
+                   help="rastrear procesos locales con conexión externa y marcar "
+                        "binarios sospechosos (backdoors/C2). Root = visión total")
+    p.add_argument("--netwatch-interval", type=float, default=10.0,
+                   help="segundos entre escaneos de /proc del netwatch")
     p.add_argument("--canary", default=None,
                    help="usuarios-cebo separados por coma; cualquier intento "
                         "contra ellos es CRÍTICO (defensa anti-IA)")

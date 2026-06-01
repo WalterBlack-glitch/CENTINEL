@@ -164,6 +164,28 @@ def run(args) -> list[dict]:
                 add(ERR, f"Puerto web {host}:{port} en uso y sin alternativa libre.",
                     f"Cierra el proceso: sudo ss -tlnp | grep {port}")
 
+    # 5b) Exposición del dashboard web (sin autenticación) fuera de loopback
+    if getattr(args, "web", False):
+        wh = getattr(args, "web_host", "127.0.0.1")
+        if wh not in ("127.0.0.1", "::1", "localhost"):
+            add(WARN, f"El dashboard web escuchará en {wh} (no loopback) y NO "
+                      f"tiene autenticación: cualquiera en la red verá tus datos.",
+                "Usa --web-host 127.0.0.1 y túnel SSH, o pon un proxy con auth "
+                "delante. (El bloqueo /api/block ya está restringido a loopback.)")
+
+    # 5c) Respuesta activa real vs soltado de privilegios (incompatibles)
+    if getattr(args, "respond_live", False) and not getattr(args, "no_drop", False):
+        add(WARN, "--respond-live aplica nft/iptables (requiere root sostenido), "
+                  "pero se soltarán privilegios y el bloqueo real fallará.",
+            "Añade --no-drop para mantener root, o concede CAP_NET_ADMIN al "
+            "proceso. Sin esto, los bloqueos en vivo no se aplicarán.")
+
+    # 5d) NetWatch sin root: visibilidad parcial de procesos
+    if getattr(args, "netwatch", False) and not _is_root():
+        add(WARN, "--netwatch sin root solo ve TUS procesos; un backdoor de root "
+                  "quedaría invisible.",
+            "Para visión total ejecútalo con sudo o concede CAP_SYS_PTRACE.")
+
     # 6) KEV: aviso si se pide caché sin datos
     if getattr(args, "kev_cache", None) and not getattr(args, "kev_update", False):
         if not os.path.exists(args.kev_cache):

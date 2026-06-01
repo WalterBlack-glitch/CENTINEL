@@ -90,6 +90,15 @@ class WebDashboard:
 
         @app.post("/api/block")
         async def block(req: Request):
+            # Endurecimiento: el bloqueo (controla el firewall) SOLO se acepta
+            # desde loopback. Aunque expongas el dashboard con --web-host 0.0.0.0,
+            # un atacante en la red no puede manejar tu firewall ni hacer DoS de
+            # bloqueos. La lectura es abierta; la acción no.
+            peer = req.client.host if req.client else ""
+            if peer not in ("127.0.0.1", "::1", "localhost"):
+                return JSONResponse(
+                    {"ok": False, "detail": "bloqueo solo permitido desde loopback"},
+                    status_code=403)
             if not self.responder:
                 return JSONResponse({"ok": False,
                                      "detail": "respuesta activa no habilitada"})
