@@ -245,6 +245,45 @@ centinela --doctor            # solo diagnostica y sale
 centinela --simulate --web    # diagnostica y arranca; --no-doctor para omitir
 ```
 
+## Tracker de procesos maliciosos ↔ IP (`--netwatch`)
+
+Un backdoor/C2 deja una huella inevitable: un **proceso** con un **archivo** en
+disco que mantiene una **conexión** a una IP. NetWatch los empareja leyendo solo
+`/proc` (sin subprocess ni shell):
+
+```
+conexión externa  ↔  inode  ↔  pid  ↔  binario en disco
+```
+
+y marca el proceso cuyo binario es sospechoso: **borrado** del disco, en
+`/tmp`·`/dev/shm`·`/run`, **world-writable**, **oculto**, o un **script**
+ejecutado desde un directorio efímero (caza backdoors en Python/Bash cuyo
+intérprete es legítimo). El evento sale con la **IP remota como origen**, así el
+C2 pasa por geo/rDNS/KEV y la correlación: queda geolocalizado y puntuado como
+un actor más, y se puede bloquear.
+
+```bash
+sudo centinela --netwatch --web      # root = ve TODOS los procesos
+```
+
+> Como root ve todo el sistema; tras soltar privilegios solo ve los procesos del
+> usuario destino. Para cazar un backdoor que corre como root, ejecútalo como
+> root (o con `CAP_SYS_PTRACE`). Solo lectura: nunca abre sockets ni ejecuta nada.
+
+## Exposición a nivel root (endurecimiento)
+
+Centinela necesita root **solo** para abrir recursos privilegiados (socket de
+captura, lectura de logs, bind de honeypot, `nft`/`iptables`) y **suelta
+privilegios** a `nobody` en cuanto los abre. Notas de superficie:
+
+- El **dashboard web** escucha en `127.0.0.1` por defecto y **no tiene auth**: no
+  lo expongas con `--web-host 0.0.0.0` sin un proxy con autenticación o un túnel
+  SSH. El `doctor` te avisa si lo haces.
+- El endpoint **`/api/block`** (controla el firewall) está restringido a
+  **loopback**: aunque expongas el dashboard, nadie en la red maneja tu firewall.
+- **`--respond-live`** (bloqueo real con `nft`) necesita root sostenido, así que
+  requiere `--no-drop`; el `doctor` avisa del conflicto.
+
 ## Tests
 
 Suite de regresión centrada en las defensas de seguridad (anti-spoofing,
