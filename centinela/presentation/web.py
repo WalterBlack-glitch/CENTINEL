@@ -294,8 +294,12 @@ const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;
 const SEV=['INFO','LOW','MED','HIGH','CRIT'];
 let total=0,alerts=0,crit=0,win=[];
 // map
-const map=L.map('map',{worldCopyJump:true,zoomControl:false,attributionControl:false}).setView([25,5],2);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:8}).addTo(map);
+const map=L.map('map',{worldCopyJump:true,zoomControl:false,attributionControl:false,
+ minZoom:2,maxZoom:8,maxBounds:[[-85,-180],[85,180]],maxBoundsViscosity:1,
+ scrollWheelZoom:true,wheelDebounceTime:60,wheelPxPerZoomLevel:140,
+ zoomSnap:.5,zoomDelta:.5,zoomAnimation:true}).setView([25,5],2);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+ {subdomains:'abcd',minZoom:2,maxZoom:8,noWrap:true}).addTo(map);
 const markers={};
 function plot(ip,g,sev){if(!g||g.lat==null)return;
  const col=['#5b6b82','#38bdf8','#fbbf24','#fb7185','#ff3b5c'][sev]||'#5b6b82';
