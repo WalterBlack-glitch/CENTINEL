@@ -20,6 +20,7 @@ from .collectors.sniffer import SnifferCollector
 from .collectors.simulator import SimulatorCollector
 from .collectors.honeypot import HoneypotCollector
 from .collectors.netwatch import NetWatchCollector
+from .collectors.persistence import PersistenceCollector
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -92,6 +93,9 @@ class Centinela:
         if args.netwatch:
             self.collectors.append(
                 NetWatchCollector(self.bus, interval=args.netwatch_interval))
+        if args.rootcheck:
+            self.collectors.append(
+                PersistenceCollector(self.bus, interval=args.rootcheck_interval))
 
     def _setup_kev(self, args):
         if not (args.kev_cache or args.kev_update):
@@ -229,6 +233,11 @@ def main() -> None:
                         "binarios sospechosos (backdoors/C2). Root = visión total")
     p.add_argument("--netwatch-interval", type=float, default=10.0,
                    help="segundos entre escaneos de /proc del netwatch")
+    p.add_argument("--rootcheck", action="store_true",
+                   help="vigilar persistencia: SUID/SGID nuevos o en sitios raros "
+                        "y cron/systemd con patrones de backdoor")
+    p.add_argument("--rootcheck-interval", type=float, default=60.0,
+                   help="segundos entre escaneos de persistencia")
     p.add_argument("--canary", default=None,
                    help="usuarios-cebo separados por coma; cualquier intento "
                         "contra ellos es CRÍTICO (defensa anti-IA)")

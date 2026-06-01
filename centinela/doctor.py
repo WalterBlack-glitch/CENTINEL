@@ -186,6 +186,12 @@ def run(args) -> list[dict]:
                   "quedaría invisible.",
             "Para visión total ejecútalo con sudo o concede CAP_SYS_PTRACE.")
 
+    # 5e) Rootcheck sin root: no puede leer cron de root ni todos los SUID
+    if getattr(args, "rootcheck", False) and not _is_root():
+        add(WARN, "--rootcheck sin root no lee el cron de root ni todos los SUID; "
+                  "cobertura parcial de persistencia.",
+            "Ejecútalo con sudo para revisar todo el sistema.")
+
     # 6) KEV: aviso si se pide caché sin datos
     if getattr(args, "kev_cache", None) and not getattr(args, "kev_update", False):
         if not os.path.exists(args.kev_cache):
