@@ -155,6 +155,47 @@ def test_fcaps_baseline_y_nuevo(monkeypatch):
     assert int(evs[0].severity) == 4              # /tmp -> CRITICAL
 
 
+def test_baseline_store_firma_hmac(tmp_path):
+    from centinela.baseline_store import BaselineStore
+    bs = BaselineStore(str(tmp_path))
+    bs.save("suid", {"/usr/bin/sudo", "/bin/mount"})
+    got = bs.load("suid")
+    assert set(got) == {"/usr/bin/sudo", "/bin/mount"}
+    # Manipulación: si reescribimos el JSON sin re-firmar, debe rechazarlo.
+    import json, os as _os
+    p = _os.path.join(str(tmp_path), "suid.json")
+    with open(p) as f:
+        obj = json.load(f)
+    obj["data"].append("/tmp/.implant")
+    with open(p, "w") as f:
+        json.dump(obj, f)
+    assert bs.load("suid") is None    # firma rota -> no carga
+
+
+def test_pam_modificacion_y_kmods_nuevo(monkeypatch, tmp_path):
+    # PAM: modificación de un stack crítico genera evento HIGH (al baselinear ya
+    # cargado de disco) o NUEVO si baseline está vacía -> aceptamos cualquiera.
+    pamdir = tmp_path / "pam.d"; pamdir.mkdir()
+    (pamdir / "sshd").write_text("auth required pam_unix.so\n")
+    monkeypatch.setattr(P, "_PAM_DIRS", (str(pamdir),))
+    w = PersistenceCollector(bus=None)
+    w._scan_pam(now=1.0)  # fija baseline
+    (pamdir / "sshd").write_text("auth required pam_unix.so\nauth optional pam_evil.so\n")
+    evs = w._scan_pam(now=2.0)
+    assert any(e.kind == "persistence_pam" for e in evs)
+
+
+def test_authfiles_modificacion(tmp_path, monkeypatch):
+    f = tmp_path / "passwd"; f.write_text("root:x:0:0::/root:/bin/bash\n")
+    monkeypatch.setattr(P, "_AUTH_FILES", (str(f),))
+    w = PersistenceCollector(bus=None)
+    assert w._scan_authfiles(now=1.0) == []
+    f.write_text("root:x:0:0::/root:/bin/bash\nevil::0:0::/root:/bin/sh\n")
+    evs = w._scan_authfiles(now=2.0)
+    assert evs and evs[0].kind == "persistence_authfile"
+    assert int(evs[0].severity) == 4
+
+
 def test_drop_privileges_devuelve_tupla():
     from centinela.security import drop_privileges, layers_need_sustained_root
     ok, why = drop_privileges("nobody")

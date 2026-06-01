@@ -61,7 +61,8 @@ class Centinela:
             responder = Responder(self.engine, fw, threshold=args.block_threshold)
             self.dashboard = WebDashboard(self.bus_out, self.engine,
                                           host=args.web_host, port=args.web_port,
-                                          responder=responder)
+                                          responder=responder,
+                                          auth_token=args.web_token)
         elif args.assess:
             fw = Firewall(mode="live" if args.respond_live else "dry-run",
                           allowlist=args.allow or [])
@@ -95,7 +96,9 @@ class Centinela:
                 NetWatchCollector(self.bus, interval=args.netwatch_interval))
         if args.rootcheck:
             self.collectors.append(
-                PersistenceCollector(self.bus, interval=args.rootcheck_interval))
+                PersistenceCollector(self.bus,
+                                     interval=args.rootcheck_interval,
+                                     store_dir=args.baseline_dir))
 
     def _setup_kev(self, args):
         if not (args.kev_cache or args.kev_update):
@@ -293,6 +296,15 @@ def main() -> None:
                    help="usuario al que soltar privilegios tras abrir recursos")
     p.add_argument("--no-drop", action="store_true",
                    help="no soltar privilegios (no recomendado)")
+    p.add_argument("--web-token", default=None,
+                   help="token Bearer obligatorio para el dashboard. Si "
+                        "expones --web-host fuera de loopback y no lo pasas, "
+                        "se autogenera y se imprime al arranque.")
+    p.add_argument("--baseline-dir", default=None,
+                   help="directorio para baselines firmadas (HMAC) del rootcheck. "
+                        "Sin esto, las baselines viven solo en RAM y se pierden "
+                        "al reiniciar (un atacante puede provocar reinicio y "
+                        "blanquear su persistencia).")
     p.add_argument("--force-drop", action="store_true",
                    help="soltar privilegios aunque haya capas que requieran "
                         "root sostenido (degradará respond-live/rootcheck/netwatch)")

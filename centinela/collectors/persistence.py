@@ -80,6 +80,24 @@ _INTEGRITY_BINS = (
 )
 _INTEG_MAX_BYTES = 64 * 1024 * 1024   # nunca hasheamos más de 64 MB por archivo
 
+# Ficheros críticos de autenticación cuyo hash NUNCA cambia entre `passwd`/`useradd`
+# legítimos sin que lo sepamos. La modificación silenciosa es señal fuerte.
+_AUTH_FILES = ("/etc/passwd", "/etc/shadow", "/etc/group", "/etc/gshadow",
+               "/etc/hosts", "/etc/resolv.conf", "/etc/nsswitch.conf",
+               "/etc/pam.conf")
+_PAM_DIRS = ("/etc/pam.d",)
+# Módulos PAM legítimos típicos; si aparece uno fuera de esta lista en un stack
+# crítico (system-auth, common-auth, sshd, login, sudo) es backdoor candidato.
+_PAM_CRIT_STACKS = ("system-auth", "common-auth", "common-account",
+                    "common-password", "common-session", "sshd",
+                    "login", "sudo", "su")
+# Patrón: línea PAM que carga un .so fuera de las rutas estándar.
+_PAM_BAD_SO = re.compile(
+    r"\s(auth|account|password|session)\s.*?\s"
+    r"(?!pam_[a-z0-9_]+\.so\b)"                         # no es pam_xxx.so estándar
+    r"(/[^\s]+\.so\b|[A-Za-z0-9_./-]+\.so\b)")
+_PROC_MAX_PID = 4194304   # PID_MAX_LIMIT en kernels modernos; clamp más abajo
+
 # Patrones de backdoor en cron/unit (descarga-ejecuta, reverse shell, ofuscación).
 _BAD = re.compile(
     r"(curl|wget)\b[^\n|]*\|\s*(sh|bash)"      # curl ... | sh
@@ -102,11 +120,21 @@ def _clean(s: str, n: int = 200) -> str:
 class PersistenceCollector(Collector):
     name = "persistence"
 
-    def __init__(self, bus, interval: float = 60.0) -> None:
+    def __init__(self, bus, interval: float = 60.0,
+                 store_dir: str | None = None) -> None:
         super().__init__(bus)
         self.interval = max(10.0, interval)
-        self._suid_baseline: set[str] | None = None
         self._alerted: dict[str, float] = {}
+        # Baselines persistentes y firmadas (HMAC): sobreviven a reinicios y
+        # detectan manipulación. Si store_dir es None, se queda solo en RAM.
+        self._store = None
+        if store_dir:
+            try:
+                from ..baseline_store import BaselineStore
+                self._store = BaselineStore(store_dir)
+            except Exception:   # noqa: BLE001
+                self._store = None
+        self._suid_baseline: set[str] | None = self._bload("suid", as_set=True)
         # Baseline de integridad: path -> (sha256, size, mtime). Se fija en el
         # primer escaneo: a partir de ahí, cualquier divergencia es alerta.
         self._integ_baseline: dict[str, tuple[str, int, float]] | None = None
@@ -116,6 +144,40 @@ class PersistenceCollector(Collector):
         # rootkits modernos (ej. CAP_SYS_PTRACE para leer memoria de otros
         # procesos sin ser root).
         self._fcaps_baseline: set[str] | None = None
+        # Baselines de las capas 12-18 (nuevas):
+        self._kmod_baseline: set[str] | None = None        # /proc/modules
+        self._auth_baseline: dict[str, str] | None = None  # /etc/passwd ... -> sha256
+        self._pam_baseline: dict[str, str] | None = None   # /etc/pam.d/* -> sha256
+        self._bpf_baseline: set[str] | None = None         # /sys/fs/bpf pinned
+        # Estado para detectar PIDs ocultos (rootkit que hookea getdents).
+        # Si en un escaneo /proc dice "no existe" pero kill(pid,0) dice ESRCH=False
+        # (existe), hay PID escondido. Solo lo intentamos como root.
+        self._hidden_pid_alerted: set[int] = set()
+        self._self_baseline: dict[str, str] | None = self._bload("selfhash")
+        # Recupera el resto de baselines firmadas (si existen)
+        _ib = self._bload("integrity")
+        self._integ_baseline = ({k: tuple(v) for k, v in _ib.items()}
+                                if isinstance(_ib, dict) else None)
+        self._fcaps_baseline = self._bload("fcaps", as_set=True)
+        self._kmod_baseline = self._bload("kmod", as_set=True)
+        self._auth_baseline = self._bload("authfiles")
+        self._pam_baseline = self._bload("pam")
+        self._bpf_baseline = self._bload("bpf", as_set=True)
+
+    def _bload(self, name: str, as_set: bool = False):
+        if not self._store:
+            return None
+        data = self._store.load(name)
+        if data is None:
+            return None
+        return set(data) if as_set else data
+
+    def _bsave(self, name: str, value) -> None:
+        if self._store and value is not None:
+            try:
+                self._store.save(name, value)
+            except Exception:   # noqa: BLE001
+                pass
 
     def available(self) -> bool:
         return os.name == "posix" and os.path.isdir("/etc")
@@ -148,7 +210,23 @@ class PersistenceCollector(Collector):
         out += self._scan_authkeys(now)
         out += self._scan_integrity(now)
         out += self._scan_fcaps(now)
-        return out[:64]
+        out += self._scan_kmods(now)        # capa 12: módulos del kernel
+        out += self._scan_authfiles(now)    # capa 13: /etc/passwd/shadow/hosts...
+        out += self._scan_pam(now)          # capa 14: stack PAM
+        out += self._scan_immutable(now)    # capa 15: chattr +i sellando líneas
+        out += self._scan_hidden_pids(now)  # capa 16: PIDs ocultos por rootkit
+        out += self._scan_bpf(now)          # capa 17: eBPF pinneado
+        out += self._scan_self(now)         # capa 18: integridad del propio Centinela
+        # Persiste baselines firmadas tras este escaneo (best-effort).
+        self._bsave("suid", self._suid_baseline)
+        self._bsave("integrity", self._integ_baseline)
+        self._bsave("fcaps", self._fcaps_baseline)
+        self._bsave("kmod", self._kmod_baseline)
+        self._bsave("authfiles", self._auth_baseline)
+        self._bsave("pam", self._pam_baseline)
+        self._bsave("bpf", self._bpf_baseline)
+        self._bsave("selfhash", self._self_baseline)
+        return out[:128]
 
     @staticmethod
     def _home_dirs() -> list[str]:
@@ -603,6 +681,260 @@ class PersistenceCollector(Collector):
             except OSError:
                 continue
         return found
+
+    # ---- capa 12: módulos del kernel (LKM rootkit clásico) ----
+
+    def _scan_kmods(self, now: float) -> list[ThreatEvent]:
+        """Un LKM nuevo entre escaneos = rootkit candidato. /proc/modules es
+        legible por cualquier UID. Si /proc/modules no existe (BSD, contenedor
+        sin /proc montado), la capa se autodesactiva."""
+        try:
+            with open("/proc/modules") as f:
+                mods = {ln.split()[0] for ln in f if ln.strip()}
+        except OSError:
+            return []
+        if self._kmod_baseline is None:
+            self._kmod_baseline = mods
+            return []
+        out: list[ThreatEvent] = []
+        for m in mods - self._kmod_baseline:
+            if self._fire(now, "kmod:" + m):
+                out.append(ThreatEvent(
+                    kind="persistence_kmod", severity=Severity.CRITICAL,
+                    message=f"Módulo de kernel NUEVO cargado: {_clean(m, 80)} "
+                            f"(LKM rootkit candidato)",
+                    tags={"persistence", "kernel", "rootkit"},
+                    enrichment={"module": _clean(m, 80)}))
+        self._kmod_baseline = mods
+        return out
+
+    # ---- capa 13: integridad de ficheros de autenticación / resolución ----
+
+    def _scan_authfiles(self, now: float) -> list[ThreatEvent]:
+        """Hashea /etc/passwd, shadow, group, hosts, resolv.conf, nsswitch.
+        Una modificación silenciosa de cualquiera de estos = compromiso."""
+        cur: dict[str, str] = {}
+        for p in _AUTH_FILES:
+            h = self._sha256(p)
+            if h:
+                cur[p] = h
+        if self._auth_baseline is None:
+            self._auth_baseline = cur
+            return []
+        out: list[ThreatEvent] = []
+        for p, h in cur.items():
+            old = self._auth_baseline.get(p)
+            if old and old != h and self._fire(now, "auth:" + p):
+                out.append(ThreatEvent(
+                    kind="persistence_authfile", severity=Severity.CRITICAL,
+                    message=f"Fichero crítico MODIFICADO: {p} "
+                            f"(sha256 {old[:10]}…→{h[:10]}…)",
+                    tags={"persistence", "authfile", "host"},
+                    enrichment={"path": p, "old": old, "new": h}))
+        self._auth_baseline = cur
+        return out
+
+    # ---- capa 14: stack PAM (backdoor de login universal) ----
+
+    def _scan_pam(self, now: float) -> list[ThreatEvent]:
+        out: list[ThreatEvent] = []
+        cur: dict[str, str] = {}
+        for d in _PAM_DIRS:
+            try:
+                names = os.listdir(d)
+            except OSError:
+                continue
+            for name in names:
+                p = os.path.join(d, name)
+                h = self._sha256(p)
+                if not h:
+                    continue
+                cur[p] = h
+                # Patrón sospechoso: línea PAM cargando un .so fuera de rutas
+                # estándar (rootkit dropea su .so en /lib/security/.evil.so).
+                if name in _PAM_CRIT_STACKS or any(name.startswith(s)
+                                                   for s in _PAM_CRIT_STACKS):
+                    try:
+                        with open(p, errors="replace") as f:
+                            for ln in f:
+                                s = ln.strip()
+                                if not s or s.startswith("#"):
+                                    continue
+                                m = _PAM_BAD_SO.search(s)
+                                if m and ("/tmp/" in s or "/dev/shm" in s
+                                          or "/var/tmp" in s):
+                                    if self._fire(now, "pam-bad:" + p):
+                                        out.append(ThreatEvent(
+                                            kind="persistence_pam",
+                                            severity=Severity.CRITICAL,
+                                            message=f"PAM con módulo sospechoso "
+                                                    f"en {p}: {_clean(s, 120)}",
+                                            tags={"persistence", "pam", "auth"},
+                                            enrichment={"path": p,
+                                                        "line": _clean(s, 200)}))
+                                    break
+                    except OSError:
+                        pass
+        if self._pam_baseline is None:
+            self._pam_baseline = cur
+            return out
+        for p, h in cur.items():
+            old = self._pam_baseline.get(p)
+            if old is None and self._fire(now, "pam-new:" + p):
+                out.append(ThreatEvent(
+                    kind="persistence_pam", severity=Severity.HIGH,
+                    message=f"Stack PAM NUEVO: {p}",
+                    tags={"persistence", "pam"}, enrichment={"path": p}))
+            elif old and old != h and self._fire(now, "pam-mod:" + p):
+                out.append(ThreatEvent(
+                    kind="persistence_pam", severity=Severity.CRITICAL,
+                    message=f"Stack PAM MODIFICADO: {p}",
+                    tags={"persistence", "pam"}, enrichment={"path": p}))
+        self._pam_baseline = cur
+        return out
+
+    # ---- capa 15: atributo immutable (chattr +i) en ficheros críticos ----
+
+    def _scan_immutable(self, now: float) -> list[ThreatEvent]:
+        """Un rootkit sella /etc/passwd con +i para que su línea UID 0
+        sobreviva al limpiado. En un sistema sano, ninguno de estos ficheros
+        debería tener el flag immutable."""
+        if not hasattr(os, "open") or os.name != "posix":
+            return []
+        try:
+            import fcntl, array
+        except ImportError:
+            return []
+        FS_IOC_GETFLAGS = 0x80086601
+        FS_IMMUTABLE_FL = 0x00000010
+        out: list[ThreatEvent] = []
+        for p in _AUTH_FILES:
+            try:
+                fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK)
+            except OSError:
+                continue
+            try:
+                arg = array.array("L", [0])
+                fcntl.ioctl(fd, FS_IOC_GETFLAGS, arg, True)
+                if arg[0] & FS_IMMUTABLE_FL and self._fire(now, "immut:" + p):
+                    out.append(ThreatEvent(
+                        kind="persistence_immutable", severity=Severity.CRITICAL,
+                        message=f"{p} tiene flag +i (immutable): rootkit "
+                                f"sellando persistencia.",
+                        tags={"persistence", "rootkit", "host"},
+                        enrichment={"path": p}))
+            except OSError:
+                pass
+            finally:
+                os.close(fd)
+        return out
+
+    # ---- capa 16: PIDs ocultos (rootkit que hookea getdents) ----
+
+    def _scan_hidden_pids(self, now: float) -> list[ThreatEvent]:
+        """Cross-check: si kill(pid, 0) dice que el PID existe (no ESRCH) pero
+        /proc/<pid> no aparece, el rootkit oculta procesos. Solo intentamos
+        en PIDs razonables y solo si tenemos privilegios."""
+        if not hasattr(os, "kill") or os.name != "posix":
+            return []
+        try:
+            visible = {int(n) for n in os.listdir("/proc") if n.isdigit()}
+        except OSError:
+            return []
+        if not visible:
+            return []
+        max_pid = max(visible)
+        # Barrido acotado: hasta max_pid + 1024, pero nunca más de 65536 pasos.
+        upper = min(max_pid + 1024, 65536)
+        out: list[ThreatEvent] = []
+        for pid in range(1, upper):
+            if pid in visible:
+                continue
+            try:
+                os.kill(pid, 0)         # 0 = no envía señal, solo prueba
+            except ProcessLookupError:
+                continue                # ESRCH: no existe → ok
+            except PermissionError:
+                # Existe pero no es nuestro: en sistema sano /proc lo lista igual.
+                pass
+            except OSError:
+                continue
+            else:
+                pass
+            # Si llegamos aquí, el PID existe pero NO está en /proc.
+            if pid in self._hidden_pid_alerted:
+                continue
+            self._hidden_pid_alerted.add(pid)
+            out.append(ThreatEvent(
+                kind="persistence_hidden_pid", severity=Severity.CRITICAL,
+                message=f"PID {pid} existe (kill(0) ok) pero /proc/{pid} no "
+                        f"aparece: rootkit ocultando procesos.",
+                tags={"persistence", "rootkit", "kernel"},
+                enrichment={"pid": pid}))
+            if len(out) >= 8:
+                break
+        return out
+
+    # ---- capa 17: programas eBPF pinneados (rootkit moderno) ----
+
+    def _scan_bpf(self, now: float) -> list[ThreatEvent]:
+        """Lista objetos eBPF pinneados en /sys/fs/bpf/. Los rootkits
+        modernos cargan BPF en vez de LKM (mejor camuflaje, no levanta
+        verificación de firmas)."""
+        found: set[str] = set()
+        for root, _, files in os.walk("/sys/fs/bpf", topdown=True):
+            for f in files:
+                found.add(os.path.join(root, f))
+            if len(found) > 256:
+                break
+        if self._bpf_baseline is None:
+            self._bpf_baseline = found
+            return []
+        out: list[ThreatEvent] = []
+        for p in found - self._bpf_baseline:
+            if self._fire(now, "bpf:" + p):
+                out.append(ThreatEvent(
+                    kind="persistence_bpf", severity=Severity.HIGH,
+                    message=f"Objeto eBPF NUEVO pinneado: {_clean(p, 120)} "
+                            f"(rootkit eBPF candidato)",
+                    tags={"persistence", "ebpf", "kernel"},
+                    enrichment={"path": _clean(p, 200)}))
+        self._bpf_baseline = found
+        return out
+
+    # ---- capa 18: auto-integridad del propio Centinela ----
+
+    def _scan_self(self, now: float) -> list[ThreatEvent]:
+        """Si modifican un fichero del propio paquete, dejaríamos de alertar
+        en silencio. Se hashea el árbol del paquete al primer escaneo y se
+        compara después."""
+        import centinela
+        root = os.path.dirname(os.path.abspath(centinela.__file__))
+        cur: dict[str, str] = {}
+        for r, _, files in os.walk(root):
+            for f in files:
+                if not f.endswith(".py"):
+                    continue
+                p = os.path.join(r, f)
+                h = self._sha256(p)
+                if h:
+                    cur[p] = h
+            if len(cur) > 512:
+                break
+        if not hasattr(self, "_self_baseline") or self._self_baseline is None:
+            self._self_baseline = cur
+            return []
+        out: list[ThreatEvent] = []
+        for p, h in cur.items():
+            old = self._self_baseline.get(p)
+            if old and old != h and self._fire(now, "self:" + p):
+                out.append(ThreatEvent(
+                    kind="persistence_selftamper", severity=Severity.CRITICAL,
+                    message=f"Fichero de Centinela MODIFICADO en caliente: {p}",
+                    tags={"persistence", "self", "tamper"},
+                    enrichment={"path": p, "old": old, "new": h}))
+        self._self_baseline = cur
+        return out
 
     # ---- util ----
 

@@ -30,12 +30,21 @@ except Exception:
 class WebDashboard:
     def __init__(self, bus: EventBus, engine: CorrelationEngine,
                  host: str = "127.0.0.1", port: int = 8787,
-                 responder=None) -> None:
+                 responder=None, auth_token: str | None = None) -> None:
         self.bus = bus
         self.engine = engine
         self.host = host
         self.port = port
         self.responder = responder   # respuesta activa (firewall) opcional
+        # Token Bearer obligatorio si el dashboard escucha fuera de loopback.
+        # Si no se pasa y el bind NO es loopback, se autogenera y se imprime
+        # por stdout (única vez). En loopback queda opcional.
+        if auth_token is None and host not in ("127.0.0.1", "::1", "localhost"):
+            import secrets
+            auth_token = secrets.token_urlsafe(32)
+            print(f"[centinela] dashboard expuesto fuera de loopback: token "
+                  f"autogenerado (guárdalo):\n    {auth_token}")
+        self.auth_token = auth_token
 
     @staticmethod
     def available() -> bool:
@@ -43,6 +52,34 @@ class WebDashboard:
 
     def _build_app(self):
         app = FastAPI(title="Centinela")
+
+        # Middleware de autenticación: si hay token, exigir Authorization Bearer
+        # (o ?token=... para WebSocket que no permite headers). Excepción: la
+        # raíz "/" sirve HTML estático, no datos sensibles.
+        if self.auth_token:
+            from fastapi import HTTPException
+            from starlette.middleware.base import BaseHTTPMiddleware
+
+            class _Auth(BaseHTTPMiddleware):
+                def __init__(self, app, token):
+                    super().__init__(app)
+                    self.token = token
+
+                async def dispatch(self, request, call_next):
+                    if request.url.path == "/":
+                        return await call_next(request)
+                    got = request.headers.get("authorization", "")
+                    if got.startswith("Bearer "):
+                        got = got[7:]
+                    else:
+                        got = request.query_params.get("token", "")
+                    import hmac as _h
+                    if not _h.compare_digest(got, self.token):
+                        return JSONResponse({"ok": False, "detail": "auth"},
+                                            status_code=401)
+                    return await call_next(request)
+
+            app.add_middleware(_Auth, token=self.auth_token)
 
         @app.get("/", response_class=HTMLResponse)
         async def index():
