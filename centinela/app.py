@@ -35,6 +35,7 @@ from .security import drop_privileges, safe_path, valid_iface
 class Centinela:
     def __init__(self, args) -> None:
         self.args = args
+        self.runtime_errors: list[str] = []   # fallos en ejecución -> informe
         # Dos buses: bus_in recibe eventos crudos de colectores (y alertas de la
         # correlación); el pipeline enriquece+correla y republica en bus_out, al
         # que se suscribe la presentación. Así la UI nunca ve un evento a medio
@@ -98,27 +99,58 @@ class Centinela:
 
     async def _pipeline(self) -> None:
         """Consume crudos de bus_in -> enriquece -> correla -> persiste ->
-        republica enriquecido en bus_out (lo que ve la presentación)."""
+        republica enriquecido en bus_out (lo que ve la presentación).
+
+        Cada evento se procesa en su propio try: un evento que reviente se
+        descarta y se registra, pero NUNCA tumba el pipeline entero."""
         queue = self.bus.subscribe()
         while True:
             ev = await queue.get()
-            if ev.source == "correlation":   # alerta ya procesada: persiste y reenvía
+            try:
+                if ev.source == "correlation":   # alerta ya procesada
+                    await self.store.save(ev)
+                    await self.bus_out.publish(ev)
+                    continue
+                ev = await self.enricher.enrich(ev)
+                ev = await self.engine.process(ev)
                 await self.store.save(ev)
                 await self.bus_out.publish(ev)
-                continue
-            ev = await self.enricher.enrich(ev)
-            ev = await self.engine.process(ev)
-            await self.store.save(ev)
-            await self.bus_out.publish(ev)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:   # noqa: BLE001
+                self._note_error("pipeline", exc)
+
+    def _note_error(self, where: str, exc: BaseException) -> None:
+        """Registra un fallo en ejecución (acotado) para el informe final."""
+        msg = f"{where}: {type(exc).__name__}: {exc}"
+        if msg not in self.runtime_errors:
+            self.runtime_errors.append(msg)
+            if len(self.runtime_errors) > 50:
+                self.runtime_errors.pop(0)
+            print(f"[centinela] aviso: {msg} (capa degradada, app sigue)")
+
+    async def _guard(self, name: str, coro) -> None:
+        """Envuelve una capa: si revienta, se desactiva sin tumbar el resto."""
+        try:
+            await coro
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:   # noqa: BLE001
+            self._note_error(f"capa '{name}'", exc)
 
     async def run(self) -> None:
         tasks = [asyncio.create_task(self._pipeline()),
-                 asyncio.create_task(self.dashboard.run())]
+                 asyncio.create_task(self._guard("dashboard", self.dashboard.run()))]
         active = []
         for c in self.collectors:
-            if c.available():
+            try:
+                ok = c.available()
+            except Exception as exc:   # noqa: BLE001
+                self._note_error(f"colector '{c.name}'.available()", exc)
+                ok = False
+            if ok:
                 active.append(c.name)
-                tasks.append(asyncio.create_task(c.run()))
+                tasks.append(asyncio.create_task(self._guard(c.name, c.run())))
         if not active:
             print("[centinela] Aviso: ningún colector disponible "
                   "(¿permisos? ¿auth.log? ¿scapy?). Corriendo en vacío.")
@@ -134,6 +166,12 @@ class Centinela:
             pass
         finally:
             self.store.close()
+            if self.runtime_errors:
+                from .feedback import write_report
+                extra = "\n".join(self.runtime_errors)
+                path = write_report(extra="Fallos de capas en ejecución:\n" + extra)
+                print(f"[centinela] {len(self.runtime_errors)} fallo(s) de capa "
+                      f"durante la sesión. Informe para tu asistente en: {path}")
 
 
 def _load_oui(path: str | None) -> dict[str, str]:
@@ -209,19 +247,38 @@ def main() -> None:
     if args.simulate and args.respond_live:
         p.error("--respond-live no se permite con --simulate "
                 "(evita bloquear IPs reales con tráfico ficticio)")
+    from .doctor import run as doctor_run, has_blocking_errors
+    from .feedback import write_report
+
     if args.doctor:
-        from .doctor import run as doctor_run, has_blocking_errors
-        sys.exit(1 if has_blocking_errors(doctor_run(args)) else 0)
+        findings = doctor_run(args)
+        unresolved = [f for f in findings if f["level"] in ("error", "warn")]
+        if unresolved:
+            path = write_report(findings)
+            print(f"[centinela] informe de feedback escrito en: {path}")
+        sys.exit(1 if has_blocking_errors(findings) else 0)
+
+    findings = []
     if not args.no_doctor:
-        from .doctor import run as doctor_run, has_blocking_errors
-        if has_blocking_errors(doctor_run(args)):
-            print("[centinela] hay errores que impiden arrancar con seguridad. "
-                  "Corrígelos o usa --no-doctor para forzar.")
-            sys.exit(1)
+        # El doctor auto-cura lo que puede (puerto, BD, permisos) y MUTA args.
+        findings = doctor_run(args)
+        unresolved = [f for f in findings if f["level"] in ("error", "warn")]
+        if unresolved:
+            path = write_report(findings)
+            print(f"[centinela] {len(unresolved)} cosa(s) que no pude arreglar "
+                  f"solo. Informe para tu asistente en: {path}")
+            print("[centinela] continúo en modo best-effort "
+                  "(las capas que fallen se desactivan, no tumban la app).")
+
     try:
         asyncio.run(Centinela(args).run())
     except KeyboardInterrupt:
         print("\n[centinela] detenido")
+    except Exception as exc:   # noqa: BLE001 — captura para feedback, no crash mudo
+        path = write_report(findings, exc=exc)
+        print(f"[centinela] error inesperado en ejecución. "
+              f"Informe para tu asistente en: {path}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

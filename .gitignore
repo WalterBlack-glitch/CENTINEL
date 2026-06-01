@@ -4,6 +4,7 @@ __pycache__/
 *.db-wal
 *.db-shm
 kev.json
+centinela_feedback.txt
 .venv/
 venv/
 *.egg-info/

@@ -45,14 +45,31 @@ def test_endurece_permisos_de_bd_existente(tmp_path):
     assert (os.stat(db).st_mode & 0o077) == 0
 
 
-def test_puerto_ocupado_es_error(tmp_path):
+def test_puerto_ocupado_se_auto_arregla(tmp_path):
     import socket
+    from centinela.doctor import FIX
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
     s.listen()
     try:
-        f = run(_args(db=str(tmp_path / "c.db"), web=True, web_port=port))
-        assert any("uso" in x["msg"].lower() for x in f if x["level"] == ERR)
+        args = _args(db=str(tmp_path / "c.db"), web=True, web_port=port)
+        f = run(args)
+        # Auto-arreglo: ya no es error; el puerto se reubica y muta args.
+        assert any(x["level"] == FIX for x in f)
+        assert args.web_port != port
+        assert not has_blocking_errors(f)
     finally:
         s.close()
+
+
+def test_db_no_escribible_se_reubica(monkeypatch, tmp_path):
+    from centinela.doctor import FIX
+    # Forzamos un directorio de BD no escribible: el doctor debe reubicar.
+    bad = tmp_path / "nope" / "c.db"
+    monkeypatch.setattr("os.makedirs",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("ro")))
+    args = _args(db=str(bad))
+    f = run(args)
+    assert any(x["level"] == FIX and "reubic" in x["msg"].lower() for x in f) \
+        or any(x["level"] == ERR for x in f)

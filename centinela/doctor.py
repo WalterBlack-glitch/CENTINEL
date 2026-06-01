@@ -36,6 +36,31 @@ def _port_free(host: str, port: int) -> bool:
         s.close()
 
 
+def _free_port(host: str, start: int, tries: int = 50) -> int | None:
+    """Busca el primer puerto libre desde `start` (auto-arreglo de colisión)."""
+    for p in range(start, min(start + tries, 65536)):
+        if _port_free(host, p):
+            return p
+    return None
+
+
+def _writable_fallback_db(name: str = "centinela.db") -> str | None:
+    """Devuelve una ruta de BD escribible (home -> XDG -> temp)."""
+    import tempfile
+    home = os.path.expanduser("~")
+    candidates = [home,
+                  os.path.join(home, ".local", "share", "centinela"),
+                  tempfile.gettempdir()]
+    for d in candidates:
+        try:
+            os.makedirs(d, mode=0o700, exist_ok=True)
+            if os.access(d, os.W_OK):
+                return os.path.join(d, name)
+        except OSError:
+            continue
+    return None
+
+
 def _is_root() -> bool:
     return hasattr(os, "geteuid") and os.geteuid() == 0
 
@@ -93,18 +118,27 @@ def run(args) -> list[dict]:
     # 4) Directorio y permisos de la base de datos (ARREGLO automático seguro)
     db = getattr(args, "db", "centinela.db")
     d = os.path.dirname(os.path.abspath(db))
+    db_ok = False
     if not os.path.isdir(d):
         try:
             os.makedirs(d, mode=0o700, exist_ok=True)
             add(FIX, f"Directorio de la BD creado: {d}")
-        except OSError as e:
-            add(ERR, f"No se puede crear el directorio de la BD ({d}): {e}",
-                f"Crea el directorio a mano o usa --db con una ruta escribible.")
-    elif not os.access(d, os.W_OK):
-        add(ERR, f"Sin permiso de escritura en {d}.",
-            f"Usa --db con una ruta escribible, p.ej. --db ~/centinela.db")
-    else:
+            db_ok = True
+        except OSError:
+            pass
+    elif os.access(d, os.W_OK):
         add(OK, f"BD escribible: {db}")
+        db_ok = True
+    if not db_ok:
+        # Auto-arreglo: reubica la BD a una ruta escribible y muta args.
+        alt = _writable_fallback_db()
+        if alt:
+            args.db = alt
+            db = alt
+            add(FIX, f"Ruta de BD no escribible; reubicada automáticamente a {alt}")
+        else:
+            add(ERR, f"Sin ubicación escribible para la BD (probé home y temp).",
+                "Usa --db con una ruta escribible, p.ej. --db ~/centinela.db")
     # endurece permisos de una BD ya existente (debe ser 0600)
     if os.path.exists(db):
         try:
@@ -118,12 +152,17 @@ def run(args) -> list[dict]:
     # 5) Puertos libres
     if getattr(args, "web", False):
         host, port = getattr(args, "web_host", "127.0.0.1"), getattr(args, "web_port", 8787)
-        if not _port_free(host, port):
-            add(ERR, f"El puerto web {host}:{port} ya está en uso.",
-                f"Cierra el proceso que lo ocupa o usa --web-port OTRO. "
-                f"Ver quién lo usa: sudo ss -tlnp | grep {port}")
-        else:
+        if _port_free(host, port):
             add(OK, f"Puerto web {host}:{port} libre")
+        else:
+            # Auto-arreglo: salta al siguiente puerto libre y muta args.
+            alt = _free_port(host, port + 1)
+            if alt:
+                args.web_port = alt
+                add(FIX, f"Puerto {port} ocupado; el web usará {alt} automáticamente.")
+            else:
+                add(ERR, f"Puerto web {host}:{port} en uso y sin alternativa libre.",
+                    f"Cierra el proceso: sudo ss -tlnp | grep {port}")
 
     # 6) KEV: aviso si se pide caché sin datos
     if getattr(args, "kev_cache", None) and not getattr(args, "kev_update", False):
