@@ -28,7 +28,7 @@ centinela = "centinela.app:main"
 [tool.setuptools]
 packages = ["centinela", "centinela.collectors", "centinela.enrichment",
             "centinela.correlation", "centinela.storage",
-            "centinela.presentation", "centinela.response"]
+            "centinela.presentation", "centinela.response", "centinela.intel"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

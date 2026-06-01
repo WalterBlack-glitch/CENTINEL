@@ -25,7 +25,7 @@ import subprocess
 import time
 from collections import OrderedDict
 
-from ..core import ThreatEvent
+from ..core import Severity, ThreatEvent
 
 _ARP_LINE = re.compile(
     r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3}).*?(?P<mac>[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})"
@@ -51,8 +51,9 @@ _ARP_BIN = _resolve_bin("arp")
 
 class Enricher:
     def __init__(self, oui_db: dict[str, str] | None = None,
-                 resolve_rdns: bool = False, geo=None) -> None:
+                 resolve_rdns: bool = False, geo=None, kev=None) -> None:
         self._geo = geo  # GeoResolver opcional
+        self._kev = kev  # KevCatalog opcional
         self._arp_cache: dict[str, str] = {}
         self._arp_ts = 0.0
         # cache LRU con TTL: ip -> (nombre|None, ts)
@@ -79,6 +80,17 @@ class Enricher:
             g = self._geo.lookup(ev.src_ip)
             if g:
                 ev.enrichment["geo"] = g
+        # KEV: si el evento referencia un CVE con explotación confirmada, sube
+        # severidad y lo marca (lo más explotado en el mundo real ahora mismo).
+        cve = ev.enrichment.get("cve")
+        if self._kev is not None and cve and self._kev.contains(cve):
+            rec = self._kev.get(cve) or {}
+            ev.enrichment["kev"] = True
+            ev.tags.add("kev")
+            ev.severity = max(ev.severity, Severity.HIGH)
+            if rec.get("ransomware"):
+                ev.tags.add("ransomware")
+                ev.severity = Severity.CRITICAL
         return ev
 
     def _classify_ip(self, ev: ThreatEvent) -> None:

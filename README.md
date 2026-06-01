@@ -146,8 +146,23 @@ rastros característicos en los logs de sshd **antes** de la fase de login.
 
 Las firmas no disparan bloqueos por sí solas: alimentan el score del actor (flag
 `exploit`, +25) y las ráfagas escalan como cualquier evento, así que la respuesta
-activa decide por score + allowlist. Fundamentado en CVEs **explotados
-activamente** que usan SSH como vector inicial (catálogo KEV de CISA, 2024-2026).
+activa decide por score + allowlist.
+
+### Feed CVE de CISA KEV (gratis, sin API key)
+
+Centinela cruza los CVEs detectados contra el catálogo **KEV de CISA** (Known
+Exploited Vulnerabilities — la lista oficial de CVEs con explotación confirmada
+en el mundo real). Si un CVE está en KEV, el evento sube a `HIGH` y se etiqueta
+`kev`; si KEV lo marca con uso en ransomware, sube a `CRITICAL` (`ransomware`).
+
+```bash
+centinela --kev-update --kev-cache kev.json      # descarga el feed (~1600 CVEs)
+centinela --kev-cache kev.json                    # usa la caché (offline)
+```
+
+Offline-first: funciona desde la caché en disco; la descarga es opt-in, solo
+desde el host oficial de CISA por HTTPS (TLS verificado, host final validado
+contra redirecciones, tamaño acotado). Actualízalo por cron con `--kev-update`.
 
 ## Defensa contra hacking asistido por IA
 

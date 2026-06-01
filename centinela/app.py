@@ -19,6 +19,7 @@ from .collectors.sniffer import SnifferCollector
 from .collectors.simulator import SimulatorCollector
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
+from .intel.kev import KevCatalog
 from .correlation.engine import CorrelationEngine
 from .storage.db import EventStore
 from .presentation.terminal import TerminalDashboard
@@ -41,8 +42,9 @@ class Centinela:
         oui = safe_path(args.oui, must_exist=True) if args.oui else None
         geo = GeoResolver(safe_path(args.geo, must_exist=True)) \
             if args.geo else None
+        self.kev = self._setup_kev(args)
         self.enricher = Enricher(oui_db=_load_oui(oui),
-                                 resolve_rdns=args.rdns, geo=geo)
+                                 resolve_rdns=args.rdns, geo=geo, kev=self.kev)
         canary = {u.strip() for u in (args.canary or "").split(",") if u.strip()}
         self.engine = CorrelationEngine(self.bus, canary_users=canary)
         self.store = EventStore(safe_path(args.db))
@@ -73,6 +75,20 @@ class Centinela:
         if args.sniff:
             self.collectors.append(
                 SnifferCollector(self.bus, valid_iface(args.iface)))
+
+    def _setup_kev(self, args):
+        if not (args.kev_cache or args.kev_update):
+            return None
+        cache = args.kev_cache or "kev.json"
+        kev = KevCatalog(cache)
+        if args.kev_update:
+            ok, detail = kev.update()   # descarga al arranque (fuera del hot-path)
+            print(f"[centinela] {detail}")
+        if kev.available:
+            print(f"[centinela] KEV cargado: {kev.count} CVEs explotados")
+        else:
+            print("[centinela] KEV sin datos (usa --kev-update para descargar)")
+        return kev
 
     async def _pipeline(self) -> None:
         """Consume crudos de bus_in -> enriquece -> correla -> persiste ->
@@ -156,6 +172,10 @@ def main() -> None:
     p.add_argument("--web-port", type=int, default=8787, help="puerto del web")
     p.add_argument("--geo", default=None,
                    help="ruta a GeoLite2-City.mmdb para geolocalizar IPs")
+    p.add_argument("--kev-cache", default=None,
+                   help="ruta de la caché del feed KEV de CISA (offline)")
+    p.add_argument("--kev-update", action="store_true",
+                   help="descargar/actualizar el feed KEV de CISA al arrancar")
     p.add_argument("--assess", action="store_true",
                    help="modo examen: monitorea, prioriza, corrige y sigue")
     p.add_argument("--assess-window", type=float, default=15.0,
