@@ -185,6 +185,26 @@ def test_pam_modificacion_y_kmods_nuevo(monkeypatch, tmp_path):
     assert any(e.kind == "persistence_pam" for e in evs)
 
 
+def test_maintenance_silencia_durante_gracia():
+    from centinela.maintenance import MaintenanceContext
+    m = MaintenanceContext(grace_seconds=9999)
+    legit, why = m.is_legitimate("persistence_authfile", "/etc/passwd")
+    assert legit and "gracia" in why
+
+
+def test_maintenance_coalesce_burst(monkeypatch):
+    from centinela.maintenance import MaintenanceContext
+    from centinela.core import ThreatEvent, Severity
+    w = PersistenceCollector(bus=None,
+        maintenance=MaintenanceContext(grace_seconds=0))
+    raw = [ThreatEvent(kind="persistence_integrity", severity=Severity.CRITICAL,
+                       message=f"x{i}", enrichment={"path": f"/usr/bin/{i}"})
+           for i in range(25)]
+    out = w._filter_maintenance(raw, now=1.0)
+    assert len(out) == 1 and "Ráfaga" in out[0].message
+    assert int(out[0].severity) <= 3   # se rebaja a MEDIUM
+
+
 def test_authfiles_modificacion(tmp_path, monkeypatch):
     f = tmp_path / "passwd"; f.write_text("root:x:0:0::/root:/bin/bash\n")
     monkeypatch.setattr(P, "_AUTH_FILES", (str(f),))

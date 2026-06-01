@@ -121,10 +121,22 @@ class PersistenceCollector(Collector):
     name = "persistence"
 
     def __init__(self, bus, interval: float = 60.0,
-                 store_dir: str | None = None) -> None:
+                 store_dir: str | None = None,
+                 maintenance=None) -> None:
         super().__init__(bus)
         self.interval = max(10.0, interval)
         self._alerted: dict[str, float] = {}
+        # Contexto de mantenimiento: silencia alertas durante apt/dpkg, git pull
+        # de Centinela, o el periodo de gracia inicial. Si no se pasa, todas
+        # las alertas pasan tal cual (modo paranoico).
+        if maintenance is None:
+            from ..maintenance import MaintenanceContext
+            maintenance = MaintenanceContext()
+        self._maint = maintenance
+        # Buffer para coalescer ráfagas: si llegan >20 eventos del mismo kind
+        # en 60s, se agrupan en uno solo "ráfaga: 23 cambios — probablemente
+        # mantenimiento".
+        self._burst: dict[str, list[float]] = {}
         # Baselines persistentes y firmadas (HMAC): sobreviven a reinicios y
         # detectan manipulación. Si store_dir es None, se queda solo en RAM.
         self._store = None
@@ -226,7 +238,45 @@ class PersistenceCollector(Collector):
         self._bsave("pam", self._pam_baseline)
         self._bsave("bpf", self._bpf_baseline)
         self._bsave("selfhash", self._self_baseline)
+        # Filtro de mantenimiento: degrada/descarta alertas legítimas.
+        out = self._filter_maintenance(out, now)
         return out[:128]
+
+    def _filter_maintenance(self, events: list[ThreatEvent],
+                            now: float) -> list[ThreatEvent]:
+        """Descarta o degrada eventos que coincidan con mantenimiento
+        legítimo (dpkg/apt, git pull de Centinela, periodo de gracia).
+        Además coalesce ráfagas del mismo kind: >20 en 60s se reducen a uno."""
+        kept: list[ThreatEvent] = []
+        for ev in events:
+            path = (ev.enrichment or {}).get("path") if hasattr(ev, "enrichment") \
+                else None
+            legit, why = self._maint.is_legitimate(ev.kind, path)
+            if legit:
+                # Silencia: solo log discreto, no se publica al bus.
+                # (Si quieres verlo, sube el verbose; hoy lo descartamos.)
+                continue
+            kept.append(ev)
+        # Coalescing por kind: ráfaga = mantenimiento no clasificado.
+        bucket: dict[str, list[ThreatEvent]] = {}
+        for ev in kept:
+            bucket.setdefault(ev.kind, []).append(ev)
+        final: list[ThreatEvent] = []
+        for kind, evs in bucket.items():
+            if len(evs) > 20:
+                # Demasiados a la vez = casi seguro mantenimiento masivo.
+                sample = ", ".join(_clean((e.enrichment or {}).get("path") or
+                                          e.message, 40)
+                                   for e in evs[:3])
+                final.append(ThreatEvent(
+                    kind=kind, severity=Severity.MEDIUM,
+                    message=f"Ráfaga de {len(evs)} cambios {kind} "
+                            f"(probable mantenimiento): {sample}…",
+                    tags={"persistence", "burst", "maintenance"},
+                    enrichment={"count": len(evs)}))
+            else:
+                final.extend(evs)
+        return final
 
     @staticmethod
     def _home_dirs() -> list[str]:

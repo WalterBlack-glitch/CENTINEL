@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import argparse
+import os
 import sys
 
 from .core import EventBus
@@ -95,10 +96,14 @@ class Centinela:
             self.collectors.append(
                 NetWatchCollector(self.bus, interval=args.netwatch_interval))
         if args.rootcheck:
+            from .maintenance import MaintenanceContext
+            maint = None if args.maintenance_off else MaintenanceContext(
+                grace_seconds=args.maintenance_grace)
             self.collectors.append(
                 PersistenceCollector(self.bus,
                                      interval=args.rootcheck_interval,
-                                     store_dir=args.baseline_dir))
+                                     store_dir=args.baseline_dir,
+                                     maintenance=maint))
 
     def _setup_kev(self, args):
         if not (args.kev_cache or args.kev_update):
@@ -300,6 +305,17 @@ def main() -> None:
                    help="token Bearer obligatorio para el dashboard. Si "
                         "expones --web-host fuera de loopback y no lo pasas, "
                         "se autogenera y se imprime al arranque.")
+    p.add_argument("--ack-baseline", action="store_true",
+                   help="acepta el estado actual como nueva baseline limpia "
+                        "(borra las baselines firmadas y vuelve a fijarlas en "
+                        "el próximo arranque). Úsalo tras hacer apt upgrade "
+                        "consciente, o git pull de Centinela.")
+    p.add_argument("--maintenance-grace", type=float, default=90.0,
+                   help="segundos tras el arranque sin emitir alertas de "
+                        "persistencia (deja que las baselines se estabilicen).")
+    p.add_argument("--maintenance-off", action="store_true",
+                   help="MODO PARANOICO: ignora apt/dpkg/git pull y emite "
+                        "TODA alerta (más falsos positivos).")
     p.add_argument("--baseline-dir", default=None,
                    help="directorio para baselines firmadas (HMAC) del rootcheck. "
                         "Sin esto, las baselines viven solo en RAM y se pierden "
@@ -318,6 +334,20 @@ def main() -> None:
                 "(evita bloquear IPs reales con tráfico ficticio)")
     from .doctor import run as doctor_run, has_blocking_errors
     from .feedback import write_report
+
+    if args.ack_baseline:
+        # Borra baselines firmadas: el próximo escaneo fija una nueva limpia.
+        import shutil
+        bd = args.baseline_dir or os.path.join(os.path.expanduser("~"),
+                                               ".local", "share", "centinela",
+                                               "baselines")
+        if os.path.isdir(bd):
+            shutil.rmtree(bd, ignore_errors=True)
+            print(f"[centinela] baselines borradas en {bd}. "
+                  f"En el próximo arranque se fijarán nuevas con el estado actual.")
+        else:
+            print(f"[centinela] no había baselines en {bd}; nada que hacer.")
+        sys.exit(0)
 
     if args.doctor:
         findings = doctor_run(args)
