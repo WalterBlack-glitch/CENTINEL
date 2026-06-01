@@ -3,9 +3,9 @@ import asyncio
 
 import pytest
 
-from centinela.core import EventBus, ThreatEvent
-from centinela.correlation.engine import CorrelationEngine
-from centinela.correlation.ai_defense import timing_cv, CampaignTracker, ROBOTIC_CV
+from centinel.core import EventBus, ThreatEvent
+from centinel.correlation.engine import CorrelationEngine
+from centinel.correlation.ai_defense import timing_cv, CampaignTracker, ROBOTIC_CV
 
 
 async def _run(engine, events):

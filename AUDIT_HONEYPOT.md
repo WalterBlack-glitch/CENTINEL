@@ -1,6 +1,6 @@
-# Auditoría de seguridad — Honeypot SSH de Centinela
+# Auditoría de seguridad — Honeypot SSH de Centinel
 
-Alcance: `centinela/collectors/honeypot.py` y su integración en `centinela/app.py`.
+Alcance: `centinel/collectors/honeypot.py` y su integración en `centinel/app.py`.
 Modelo de amenaza: servicio de red que escucha en `0.0.0.0`, puede arrancar como root,
 y procesa datos 100% controlados por el atacante. No edito código; entrego hallazgos + fix.
 

@@ -64,9 +64,9 @@ class HoneypotCollector(Collector):
             try:
                 srv = await asyncio.start_server(self._handle, self.host, port)
                 servers.append(srv)
-                print(f"[centinela] honeypot escuchando en {self.host}:{port}")
+                print(f"[centinel] honeypot escuchando en {self.host}:{port}")
             except OSError as e:
-                print(f"[centinela] honeypot no pudo abrir {self.host}:{port}: {e}")
+                print(f"[centinel] honeypot no pudo abrir {self.host}:{port}: {e}")
         if not servers:
             return
         try:

@@ -4,10 +4,10 @@ import json
 
 import pytest
 
-from centinela.core import Severity
-from centinela.intel.kev import KevCatalog
-from centinela.enrichment.resolver import Enricher
-from centinela.correlation import signatures as S
+from centinel.core import Severity
+from centinel.intel.kev import KevCatalog
+from centinel.enrichment.resolver import Enricher
+from centinel.correlation import signatures as S
 
 
 def _write(tmp_path, vulns, released="2026-05-01"):

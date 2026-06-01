@@ -1,5 +1,5 @@
 """Tests del informe de feedback."""
-from centinela.feedback import write_report
+from centinel.feedback import write_report
 
 
 def test_escribe_informe_con_hallazgos(tmp_path):

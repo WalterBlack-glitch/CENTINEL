@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "centinela"
+name = "centinel"
 version = "0.1.0"
 description = "Rastreo multicapa de amenazas en tiempo real (IP/MAC, fuerza bruta, scan, spraying)"
 readme = "README.md"
@@ -23,12 +23,12 @@ all = ["rich>=13", "scapy>=2.5", "fastapi>=0.110", "uvicorn>=0.27",
 test = ["pytest>=7", "pytest-asyncio>=0.23"]
 
 [project.scripts]
-centinela = "centinela.app:main"
+centinel = "centinel.app:main"
 
 [tool.setuptools]
-packages = ["centinela", "centinela.collectors", "centinela.enrichment",
-            "centinela.correlation", "centinela.storage",
-            "centinela.presentation", "centinela.response", "centinela.intel"]
+packages = ["centinel", "centinel.collectors", "centinel.enrichment",
+            "centinel.correlation", "centinel.storage",
+            "centinel.presentation", "centinel.response", "centinel.intel"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -1,7 +1,7 @@
 # Defensa contra hacking asistido por IA
 
 Los ataques que usan IA/LLM rompen las defensas clásicas de detección de
-intrusiones por tres razones, y Centinela está diseñado para contrarrestar cada
+intrusiones por tres razones, y Centinel está diseñado para contrarrestar cada
 una. Este documento separa lo **implementado** (✅) de las **ideas de roadmap**
 (◻️) para no vender humo.
 
@@ -74,7 +74,7 @@ puede actuar sobre ataques sigilosos, no solo sobre fuerza bruta ruidosa.
 - ◻️ **Honeytokens en la app:** credenciales-cebo plantadas en repos, pastebins
   o robots.txt que, si se usan, prueban scraping automatizado previo.
 
-## Defensa del propio Centinela frente a IA ofensiva
+## Defensa del propio Centinel frente a IA ofensiva
 
 Un punto a menudo ignorado: si en el futuro se añade un "analista LLM" que
 resuma alertas, **el log es input no confiable** (un atacante controla su

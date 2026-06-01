@@ -1,0 +1,161 @@
+================================================================
+CENTINEL — GUÍA RÁPIDA DE COMANDOS
+================================================================
+
+Esos eventos que ves todavía (x11-common y hidden_pid) son del
+código viejo. Aplica el git pull y se van.
+
+
+[1] PRIMERA VEZ / INSTALACIÓN
+================================================================
+
+# 1.1) Crear venv en HOME Linux (NO en /mnt/c, es lentísimo)
+python3 -m venv ~/centinel-venv
+
+# 1.2) Activar venv
+source ~/centinel-venv/bin/activate
+
+# 1.3) Instalar Centinel con extras web
+pip install -e /mnt/c/Users/Cris/Documents/Claude/centinel"[web]"
+
+
+[2] ARRANCAR CENTINEL (uso normal)
+================================================================
+
+# 2.1) Activar venv (si no está activo)
+source ~/centinel-venv/bin/activate
+
+# 2.2) Ir al repo
+cd /mnt/c/Users/Cris/Documents/Claude/centinel
+
+# 2.3) Traer cambios
+git pull
+
+# 2.4) Lanzar con root (recomendado: visibilidad completa)
+sudo ~/centinel-venv/bin/python -m centinel \
+     --rootcheck --netwatch --web --baseline-dir ~/.centinel
+
+# 2.5) Abrir dashboard en navegador
+#      http://127.0.0.1:8787
+
+
+[3] DETENER CENTINEL
+================================================================
+
+# En la terminal donde corre, pulsa: Ctrl+C
+
+
+[4] LIMPIAR FALSOS POSITIVOS (tras apt upgrade / git pull)
+================================================================
+
+# 4.1) Para Centinel (Ctrl+C)
+
+# 4.2) Borra baselines viejas
+~/centinel-venv/bin/python -m centinel \
+    --ack-baseline --baseline-dir ~/.centinel
+
+# 4.3) Vuelve a lanzar (paso 2.4)
+
+
+[5] PROBAR QUE DETECTA (en OTRA terminal, tras 2 min de gracia)
+================================================================
+
+# 5.1) Crear SUID falso en /tmp -> dispara CRITICAL persistence_suid
+sudo cp /bin/bash /tmp/.fake_suid
+sudo chmod 4755 /tmp/.fake_suid
+ls -la /tmp/.fake_suid
+
+# 5.2) Esperar ~1 min y mirar dashboard
+#      Debe aparecer: CRITICAL · persistence_suid · NUEVO · /tmp/.fake_suid
+
+# 5.3) Limpiar tras la prueba
+sudo rm /tmp/.fake_suid
+
+
+[6] DIAGNÓSTICO RÁPIDO
+================================================================
+
+# ¿Está corriendo?
+ps -ef | grep -v grep | grep centinel
+
+# ¿Qué puerto escucha?
+sudo ss -tlnp | grep 8787
+
+# Últimas alertas en BD (si la BD está accesible)
+sqlite3 centinel.db "SELECT timestamp,severity,kind,message
+                      FROM events ORDER BY id DESC LIMIT 20"
+
+# Solo doctor (no arranca, solo diagnostica)
+~/centinel-venv/bin/python -m centinel --doctor
+
+
+[7] MODOS ESPECIALES
+================================================================
+
+# Modo paranoico: sin supresión de mantenimiento (TODO grita)
+sudo ~/centinel-venv/bin/python -m centinel \
+     --rootcheck --netwatch --web \
+     --baseline-dir ~/.centinel --maintenance-off
+
+# Más capas (sniffer + honeypot SSH falso en puerto 2222)
+sudo ~/centinel-venv/bin/python -m centinel \
+     --rootcheck --netwatch --sniff --honeypot 2222 --web \
+     --baseline-dir ~/.centinel
+
+# Con respuesta activa real (nft/iptables bloquea de verdad)
+sudo ~/centinel-venv/bin/python -m centinel \
+     --rootcheck --netwatch --web --respond-live \
+     --block-threshold 25 \
+     --baseline-dir ~/.centinel
+
+
+[8] EXPONER FUERA DE LOOPBACK (CON AUTH)
+================================================================
+
+# Centinel autogenera un token Bearer y lo imprime al arranque.
+sudo ~/centinel-venv/bin/python -m centinel \
+     --rootcheck --netwatch --web \
+     --web-host 0.0.0.0 \
+     --baseline-dir ~/.centinel
+
+# Apuntar el token. Para llamar APIs:
+#   curl -H "Authorization: Bearer <token>" http://IP:8787/api/stats
+# Para el WebSocket:  ws://IP:8787/ws?token=<token>
+
+
+[9] SI NADA APARECE EN EL DASHBOARD
+================================================================
+
+- Mira la esquina superior derecha: punto verde "EN VIVO" = WebSocket OK.
+- Espera 2-3 min (90s de gracia + 60s de intervalo de rootcheck).
+- Si sigue en cero y tu sistema está limpio, ESO ES CORRECTO.
+- Para confirmar que el pipeline detecta, usa el test del paso [5].
+
+
+[10] FLAGS ÚTILES RESUMEN
+================================================================
+
+--web                        dashboard HTTP
+--web-host HOST              bind del dashboard (default 127.0.0.1)
+--web-port N                 puerto (default 8787)
+--web-token TOKEN            token Bearer (auto si bind != loopback)
+--rootcheck                  18 capas anti-rootkit
+--rootcheck-interval N       segundos entre escaneos (default 60)
+--netwatch                   tracker procesos<->IP
+--sniff                      captura de paquetes (necesita root)
+--honeypot PUERTOS           honeypot SSH (ej. 2222 o 22,2222)
+--respond-live               bloqueo real con nft/iptables
+--block-threshold N          score mínimo para bloquear (default 50)
+--baseline-dir RUTA          baselines firmadas (HMAC) persistentes
+--ack-baseline               borra baselines y refija en próximo arranque
+--maintenance-grace N        segundos de gracia tras arranque (default 90)
+--maintenance-off            modo paranoico (sin supresión)
+--no-drop                    no soltar privilegios (no recomendado)
+--force-drop                 soltar aunque haya capas que requieran root
+--doctor                     solo diagnóstico, no arranca
+--no-doctor                  saltar diagnóstico previo
+
+
+================================================================
+FIN
+================================================================

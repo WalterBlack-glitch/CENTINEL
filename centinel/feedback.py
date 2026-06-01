@@ -1,7 +1,7 @@
 """Informe de feedback: lo que la app NO pudo arreglar sola, listo para pegar.
 
 Cuando el doctor auto-cura lo que puede pero quedan errores (o algo revienta en
-ejecución), Centinela escribe un informe estructurado en texto plano con:
+ejecución), Centinel escribe un informe estructurado en texto plano con:
   - el entorno (SO, Python, plataforma, privilegios),
   - los hallazgos sin resolver y su arreglo sugerido,
   - cualquier traza de excepción capturada.
@@ -17,7 +17,7 @@ import sys
 import time
 import traceback
 
-REPORT_NAME = "centinela_feedback.txt"
+REPORT_NAME = "centinel_feedback.txt"
 
 
 def _env() -> list[str]:
@@ -45,7 +45,7 @@ def write_report(findings: list[dict] | None = None,
     lines: list[str] = []
     add = lines.append
     add("=" * 70)
-    add("INFORME DE FEEDBACK DE CENTINELA")
+    add("INFORME DE FEEDBACK DE CENTINEL")
     add("Pega este archivo completo a tu asistente para que lo arregle.")
     add("=" * 70)
     add("")

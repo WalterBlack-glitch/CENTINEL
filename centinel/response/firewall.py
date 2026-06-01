@@ -17,7 +17,7 @@ import shutil
 import subprocess
 
 _SAFE_ENV = {"PATH": "/usr/sbin:/sbin:/usr/bin:/bin", "LC_ALL": "C"}
-_TABLE = "centinela"
+_TABLE = "centinel"
 _SET = "blocked"
 
 

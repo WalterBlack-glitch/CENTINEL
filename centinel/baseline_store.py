@@ -1,6 +1,6 @@
 """Baselines persistentes y firmadas (HMAC-SHA256).
 
-Las baselines de integridad/SUID/fcaps/kmod/PAM viven en RAM. Si Centinela
+Las baselines de integridad/SUID/fcaps/kmod/PAM viven en RAM. Si Centinel
 reinicia (o un atacante lo provoca), se reconstruyen "desde cero" y un
 implante ya presente entra en la nueva baseline como legítimo.
 
@@ -9,7 +9,7 @@ usando una clave que se crea (0600) en la primera ejecución. Si el fichero
 falta o la firma no cuadra, NO se carga: se loguea y se reconstruye en RAM.
 
 API minimal:
-    bs = BaselineStore("/var/lib/centinela/baselines")
+    bs = BaselineStore("/var/lib/centinel/baselines")
     data = bs.load("suid")        # devuelve dict | list | None
     bs.save("suid", baseline_dict_o_list_o_set)
 """
@@ -33,7 +33,7 @@ class BaselineStore:
             os.makedirs(self.dir, mode=0o700, exist_ok=True)
         except OSError:
             # Fallback a temp si la ruta no es escribible (modo degradado).
-            self.dir = os.path.join(tempfile.gettempdir(), "centinela-baselines")
+            self.dir = os.path.join(tempfile.gettempdir(), "centinel-baselines")
             os.makedirs(self.dir, mode=0o700, exist_ok=True)
         self._key = self._load_or_create_key()
 

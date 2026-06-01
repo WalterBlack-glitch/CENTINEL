@@ -42,7 +42,7 @@ class WebDashboard:
         if auth_token is None and host not in ("127.0.0.1", "::1", "localhost"):
             import secrets
             auth_token = secrets.token_urlsafe(32)
-            print(f"[centinela] dashboard expuesto fuera de loopback: token "
+            print(f"[centinel] dashboard expuesto fuera de loopback: token "
                   f"autogenerado (guárdalo):\n    {auth_token}")
         self.auth_token = auth_token
 
@@ -51,7 +51,7 @@ class WebDashboard:
         return _HAS_WEB
 
     def _build_app(self):
-        app = FastAPI(title="Centinela")
+        app = FastAPI(title="Centinel")
 
         # Middleware de autenticación: si hay token, exigir Authorization Bearer
         # (o ?token=... para WebSocket que no permite headers). Excepción: la
@@ -174,7 +174,7 @@ class WebDashboard:
 
     async def run(self) -> None:
         if not _HAS_WEB:
-            print("[centinela] capa web no disponible "
+            print("[centinel] capa web no disponible "
                   "(instala: pip install '.[web]')")
             return
         config = uvicorn.Config(self._build_app(), host=self.host,
@@ -182,14 +182,14 @@ class WebDashboard:
                                 access_log=False)
         server = uvicorn.Server(config)
         server.install_signal_handlers = lambda: None  # corre como task anidada
-        print(f"[centinela] dashboard web en http://{self.host}:{self.port}")
+        print(f"[centinel] dashboard web en http://{self.host}:{self.port}")
         auto = asyncio.create_task(self._autoblock()) if self.responder else None
         try:
             await server.serve()
         except (OSError, SystemExit) as exc:
             # Puerto ocupado u otro fallo de bind: degrada con mensaje claro
             # en vez de tumbar la app con un traceback de uvicorn.
-            print(f"[centinela] no se pudo abrir el dashboard web en "
+            print(f"[centinel] no se pudo abrir el dashboard web en "
                   f"{self.host}:{self.port} ({exc}). Usa --web-port OTRO "
                   f"o cierra el proceso que ocupa el puerto.")
         finally:
@@ -234,7 +234,7 @@ def _event_payload(ev) -> dict:
 _INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Centinela · SOC</title>
+<title>Centinel · SOC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -400,7 +400,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <canvas id="matrix"></canvas>
 <header>
  <div class="brand"><div class="logo">🛰</div>
-  <div>Centinela<br><small>Threat Tracking · SOC</small></div></div>
+  <div>Centinel<br><small>Threat Tracking · SOC</small></div></div>
  <div class="bchip" id="bchip" style="margin-left:auto">🛡 <b id="b_blocked">0</b> bloqueadas
   <span class="md dryrun" id="b_mode">off</span></div>
  <div class="live"><span class="dot" id="dot"></span><span id="stxt">conectando…</span></div>

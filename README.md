@@ -1,4 +1,4 @@
-# 🛰 Centinela
+# 🛰 Centinel
 
 Rastreo **multicapa** de amenazas en tiempo real para servidores Linux. Va más
 allá de "contar intentos de fuerza bruta": correlaciona varias señales por
@@ -20,7 +20,7 @@ El valor no está en un solo detector, sino en cómo se combinan las capas:
 
 > ⚠️ **Sobre la MAC:** una MAC de origen solo es visible para dispositivos en
 > tu mismo dominio de broadcast (tu LAN). Para tráfico de internet, la MAC que
-> ves es la de tu gateway/router — Centinela lo etiqueta como `scope=wan` y no
+> ves es la de tu gateway/router — Centinel lo etiqueta como `scope=wan` y no
 > pretende lo contrario. Es una limitación física de Ethernet/IP, no del tool.
 
 ## Instalación
@@ -35,23 +35,23 @@ pip install -e ".[ui]"       # solo dashboard
 
 ```bash
 # Demo sin root ni Linux (genera ataques sintéticos):
-python -m centinela --simulate
+python -m centinel --simulate
 
 # Modo EXAMEN: monitorea, prioriza lo más grave, lo corrige y sigue.
-python -m centinela --simulate --assess          # dry-run: dice qué bloquearía
-sudo centinela --assess --respond-live \
+python -m centinel --simulate --assess          # dry-run: dice qué bloquearía
+sudo centinel --assess --respond-live \
      --block-threshold 70 --allow 1.2.3.4         # bloqueo REAL en firewall
 
 # Dashboard web en vivo (http://127.0.0.1:8787) con mapa geo:
 pip install -e ".[web,geo]"
-python -m centinela --simulate --web
-sudo centinela --sniff --web --web-host 0.0.0.0 \
+python -m centinel --simulate --web
+sudo centinel --sniff --web --web-host 0.0.0.0 \
      --geo /ruta/GeoLite2-City.mmdb         # plotea el origen en el mapa
 
 # Producción en un servidor Linux:
-sudo centinela --sniff --iface eth0           # logs de auth + captura de paquetes
-centinela --authlog-path /var/log/secure      # RHEL/CentOS
-centinela --oui oui.csv                        # resolver fabricante por MAC
+sudo centinel --sniff --iface eth0           # logs de auth + captura de paquetes
+centinel --authlog-path /var/log/secure      # RHEL/CentOS
+centinel --oui oui.csv                        # resolver fabricante por MAC
 ```
 
 Flags principales: `--simulate`, `--sniff`, `--iface`, `--no-authlog`,
@@ -66,13 +66,13 @@ Sniffer  ───┘                                      │
                                                    └─► alertas ─► EventBus ─► Dashboard
 ```
 
-Todo fluye como `ThreatEvent` (ver `centinela/core.py`). El bus es async,
+Todo fluye como `ThreatEvent` (ver `centinel/core.py`). El bus es async,
 sin dependencias. Añadir una fuente nueva = un archivo en `collectors/` que
 herede de `Collector`.
 
 ## Seguridad
 
-Centinela procesa **input hostil** (un atacante remoto controla parcialmente
+Centinel procesa **input hostil** (un atacante remoto controla parcialmente
 `auth.log` vía su username SSH y el rDNS de su IP). El código está endurecido
 contra ese modelo de amenaza —ver [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) para
 la auditoría completa (13 hallazgos) y sus mitigaciones:
@@ -91,7 +91,7 @@ la auditoría completa (13 hallazgos) y sus mitigaciones:
   ```bash
   sudo setcap cap_net_raw,cap_net_admin=eip "$(command -v python3)"
   sudo usermod -aG adm "$USER"   # acceso a /var/log/auth.log
-  centinela --sniff --iface eth0  # sin sudo
+  centinel --sniff --iface eth0  # sin sudo
   ```
 - **Anti-inyección de terminal:** se eliminan secuencias de escape ANSI y se
   escapa el markup de `rich` en todo string derivado del atacante.
@@ -102,7 +102,7 @@ la auditoría completa (13 hallazgos) y sus mitigaciones:
 
 ## Modo examen y respuesta activa
 
-`--assess` convierte Centinela en un bucle de **examen → corrección**:
+`--assess` convierte Centinel en un bucle de **examen → corrección**:
 
 1. **Examen:** monitorea tráfico en vivo durante `--assess-window` segundos.
 2. **Informe:** ranking de actores por score (IP, MAC, fallos, usuarios, puertos).
@@ -150,11 +150,11 @@ activa decide por score + allowlist.
 
 ### Atribución de actor entre IPs (la botnet como un solo adversario)
 
-La defensa más avanzada de Centinela: en vez de razonar "por IP", agrupa IPs
+La defensa más avanzada de Centinel: en vez de razonar "por IP", agrupa IPs
 distintas en un mismo **adversario** según su huella de comportamiento —el
 diccionario de usuarios objetivo, las técnicas y el perfil de temporización
 compartidos. Un atacante con IA reparte su campaña entre decenas de IPs para
-diluirse; al reconocer la huella común, Centinela las atribuye a una sola
+diluirse; al reconocer la huella común, Centinel las atribuye a una sola
 entidad y te deja defenderte de la campaña entera, no IP por IP.
 
 Cuando ≥5 IPs comparten diccionario/TTPs → `alert_actor_atribuido` y aparecen
@@ -164,14 +164,14 @@ LRU O(1): ~5 µs/evento incluso bajo un atacante que rota diccionarios).
 
 ### Feed CVE de CISA KEV (gratis, sin API key)
 
-Centinela cruza los CVEs detectados contra el catálogo **KEV de CISA** (Known
+Centinel cruza los CVEs detectados contra el catálogo **KEV de CISA** (Known
 Exploited Vulnerabilities — la lista oficial de CVEs con explotación confirmada
 en el mundo real). Si un CVE está en KEV, el evento sube a `HIGH` y se etiqueta
 `kev`; si KEV lo marca con uso en ransomware, sube a `CRITICAL` (`ransomware`).
 
 ```bash
-centinela --kev-update --kev-cache kev.json      # descarga el feed (~1600 CVEs)
-centinela --kev-cache kev.json                    # usa la caché (offline)
+centinel --kev-update --kev-cache kev.json      # descarga el feed (~1600 CVEs)
+centinel --kev-cache kev.json                    # usa la caché (offline)
 ```
 
 Offline-first: funciona desde la caché en disco; la descarga es opt-in, solo
@@ -185,7 +185,7 @@ por definición** (ningún cliente legítimo se conecta a un servicio trampa), a
 que es la señal de mayor relación señal/ruido del sistema.
 
 ```bash
-centinela --honeypot 2222 --assess --respond-live   # captura y bloquea
+centinel --honeypot 2222 --assess --respond-live   # captura y bloquea
 ```
 
 - **Baja interacción:** envía un banner SSH falso, captura el banner del cliente
@@ -203,7 +203,7 @@ centinela --honeypot 2222 --assess --respond-live   # captura y bloquea
 ## Defensa contra hacking asistido por IA
 
 Los ataques con IA/LLM rompen la detección clásica yendo **low-and-slow
-distribuidos** (cada IP bajo el umbral) y con temporización adaptativa. Centinela
+distribuidos** (cada IP bajo el umbral) y con temporización adaptativa. Centinel
 incorpora detectores que **no dependen de umbrales por-IP** — ver
 [`docs/DEFENSA_IA.md`](docs/DEFENSA_IA.md):
 
@@ -221,7 +221,7 @@ ventana (no son un vector de DoS de memoria). Cubierto por tests.
 
 ## Remediación guiada: te dice cómo arreglarlo
 
-Detectar no basta. Ante un compromiso (o intento), Centinela adjunta a la alerta
+Detectar no basta. Ante un compromiso (o intento), Centinel adjunta a la alerta
 un **playbook accionable** — qué comprobar, qué comando ejecutar y cómo cerrar el
 agujero. Aparece en un cajón **🛠️ Cómo remediar** del dashboard web (con botón
 *copiar* por comando) y en un panel propio de la terminal.
@@ -234,15 +234,15 @@ fuente hostil, nunca introduce metacaracteres de shell en un comando copiable.
 
 ### Doctor: diagnóstico y arreglo previo
 
-Antes de arrancar, Centinela revisa las causas habituales de fallo según los
+Antes de arrancar, Centinel revisa las causas habituales de fallo según los
 flags pedidos, **arregla lo seguro** (crea el directorio de la BD, endurece
 permisos a 0600) y para el resto imprime el **comando exacto** de arreglo
 (dependencias ausentes, falta de privilegios para sniffer/honeypot, puerto web
 ocupado, GeoLite/KEV inexistentes). No instala nada ni ejecuta acciones de red.
 
 ```bash
-centinela --doctor            # solo diagnostica y sale
-centinela --simulate --web    # diagnostica y arranca; --no-doctor para omitir
+centinel --doctor            # solo diagnostica y sale
+centinel --simulate --web    # diagnostica y arranca; --no-doctor para omitir
 ```
 
 ## Tracker de procesos maliciosos ↔ IP (`--netwatch`)
@@ -263,7 +263,7 @@ C2 pasa por geo/rDNS/KEV y la correlación: queda geolocalizado y puntuado como
 un actor más, y se puede bloquear.
 
 ```bash
-sudo centinela --netwatch --web      # root = ve TODOS los procesos
+sudo centinel --netwatch --web      # root = ve TODOS los procesos
 ```
 
 ## Vigilancia de persistencia / rootkits (`--rootcheck`) — defensa en capas
@@ -287,8 +287,8 @@ shell:
     troyaniza utilidades para ocultarse a sí mismo).
 
 ```bash
-sudo centinela --rootcheck --web                 # cobertura total con root
-sudo centinela --netwatch --rootcheck --web      # red + host, todo junto
+sudo centinel --rootcheck --web                 # cobertura total con root
+sudo centinel --netwatch --rootcheck --web      # red + host, todo junto
 ```
 
 > Como root ve todo el sistema; tras soltar privilegios solo ve los procesos del
@@ -297,7 +297,7 @@ sudo centinela --netwatch --rootcheck --web      # red + host, todo junto
 
 ## Exposición a nivel root (endurecimiento)
 
-Centinela necesita root **solo** para abrir recursos privilegiados (socket de
+Centinel necesita root **solo** para abrir recursos privilegiados (socket de
 captura, lectura de logs, bind de honeypot, `nft`/`iptables`) y **suelta
 privilegios** a `nobody` en cuanto los abre. Notas de superficie:
 

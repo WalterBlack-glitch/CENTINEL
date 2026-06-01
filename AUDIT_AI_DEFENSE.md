@@ -1,7 +1,7 @@
-# Auditoría de seguridad — Defensas anti-IA de Centinela
+# Auditoría de seguridad — Defensas anti-IA de Centinel
 
-Alcance: `centinela/correlation/ai_defense.py` (CampaignTracker, timing_cv) y la
-integración en `centinela/correlation/engine.py` (`_ai_defenses`, `_score`, dataclass `Actor`).
+Alcance: `centinel/correlation/ai_defense.py` (CampaignTracker, timing_cv) y la
+integración en `centinel/correlation/engine.py` (`_ai_defenses`, `_score`, dataclass `Actor`).
 Modelo de amenaza: IDS corriendo como root; el atacante controla su username SSH y rota IPs.
 
 Hallazgos ordenados por severidad.

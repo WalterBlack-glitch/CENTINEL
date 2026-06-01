@@ -1,7 +1,7 @@
 """Asesor de remediación: traduce cada amenaza en pasos concretos de arreglo.
 
 Detectar no basta. Cuando un actor compromete (o intenta comprometer) el host,
-Centinela acompaña la alerta con un PLAYBOOK accionable: qué comprobar, qué
+Centinel acompaña la alerta con un PLAYBOOK accionable: qué comprobar, qué
 ejecutar y cómo cerrar el agujero. Los pasos son plantillas estáticas (no
 incrustan entrada del atacante en comandos) y van marcados como copiables.
 
@@ -36,7 +36,7 @@ _PLAYBOOKS: dict[str, dict] = {
         "urgency": "critica",
         "steps": [
             ("Bloquea la IP atacante en el firewall ahora mismo (o pulsa "
-             "«Bloquear» arriba para que lo haga Centinela).",
+             "«Bloquear» arriba para que lo haga Centinel).",
              "sudo nft add rule inet filter input ip saddr {ip} drop"),
             ("Aísla la sesión: revisa logins activos y cierra los sospechosos.",
              "who; w; last -a | head; pkill -KILL -u {user}"),

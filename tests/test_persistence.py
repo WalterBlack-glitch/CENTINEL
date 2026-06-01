@@ -1,7 +1,7 @@
 """Tests del colector de persistencia (SUID/cron/systemd)."""
 import os
 
-from centinela.collectors.persistence import PersistenceCollector
+from centinel.collectors.persistence import PersistenceCollector
 
 
 def _mk(path, content):
@@ -69,7 +69,7 @@ def test_available_sin_etc_en_windows():
 
 
 # ---- capas nuevas (laberinto) ----
-import centinela.collectors.persistence as P
+import centinel.collectors.persistence as P
 
 
 def test_ld_preload_es_critico(tmp_path, monkeypatch):
@@ -156,7 +156,7 @@ def test_fcaps_baseline_y_nuevo(monkeypatch):
 
 
 def test_baseline_store_firma_hmac(tmp_path):
-    from centinela.baseline_store import BaselineStore
+    from centinel.baseline_store import BaselineStore
     bs = BaselineStore(str(tmp_path))
     bs.save("suid", {"/usr/bin/sudo", "/bin/mount"})
     got = bs.load("suid")
@@ -186,15 +186,15 @@ def test_pam_modificacion_y_kmods_nuevo(monkeypatch, tmp_path):
 
 
 def test_maintenance_silencia_durante_gracia():
-    from centinela.maintenance import MaintenanceContext
+    from centinel.maintenance import MaintenanceContext
     m = MaintenanceContext(grace_seconds=9999)
     legit, why = m.is_legitimate("persistence_authfile", "/etc/passwd")
     assert legit and "gracia" in why
 
 
 def test_maintenance_coalesce_burst(monkeypatch):
-    from centinela.maintenance import MaintenanceContext
-    from centinela.core import ThreatEvent, Severity
+    from centinel.maintenance import MaintenanceContext
+    from centinel.core import ThreatEvent, Severity
     w = PersistenceCollector(bus=None,
         maintenance=MaintenanceContext(grace_seconds=0))
     raw = [ThreatEvent(kind="persistence_integrity", severity=Severity.CRITICAL,
@@ -217,7 +217,7 @@ def test_authfiles_modificacion(tmp_path, monkeypatch):
 
 
 def test_drop_privileges_devuelve_tupla():
-    from centinela.security import drop_privileges, layers_need_sustained_root
+    from centinel.security import drop_privileges, layers_need_sustained_root
     ok, why = drop_privileges("nobody")
     assert isinstance(ok, bool) and isinstance(why, str)
 

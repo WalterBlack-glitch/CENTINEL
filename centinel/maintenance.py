@@ -1,13 +1,13 @@
 """Ventanas de mantenimiento: distingue cambios legítimos de hostiles.
 
-Centinela vigilaba todo en frío. En un sistema vivo eso = ruido: `apt upgrade`,
-`git pull` sobre el propio Centinela, `modprobe` al insertar un USB, `passwd`
+Centinel vigilaba todo en frío. En un sistema vivo eso = ruido: `apt upgrade`,
+`git pull` sobre el propio Centinel, `modprobe` al insertar un USB, `passwd`
 del usuario. Todos esos cambios SON legítimos y NO deben gritar CRITICAL.
 
 Este módulo expone `MaintenanceContext`:
 
   - dpkg_recent_paths(seconds): paths tocados por dpkg en los últimos N seg.
-  - self_update_in_progress(): True si el repo git de Centinela ha movido HEAD
+  - self_update_in_progress(): True si el repo git de Centinel ha movido HEAD
     en los últimos N seg (estás haciendo git pull mientras dev).
   - in_grace_period(): True durante los primeros N seg desde el arranque
     (deja que las baselines se estabilicen sin alertar).
@@ -37,10 +37,10 @@ class MaintenanceContext:
         return (time.time() - self._started) < self.grace
 
     def _find_self_head(self) -> str | None:
-        """Si Centinela vive bajo un repo git, devuelve la ruta de .git/HEAD."""
+        """Si Centinel vive bajo un repo git, devuelve la ruta de .git/HEAD."""
         try:
-            import centinela
-            d = os.path.dirname(os.path.abspath(centinela.__file__))
+            import centinel
+            d = os.path.dirname(os.path.abspath(centinel.__file__))
         except Exception:
             return None
         # Sube hasta encontrar .git/
@@ -95,7 +95,7 @@ class MaintenanceContext:
         if self.in_grace_period():
             return True, f"periodo de gracia ({int(self.grace)}s tras arranque)"
         if kind == "persistence_selftamper" and self.self_update_in_progress():
-            return True, "git pull reciente sobre el propio Centinela"
+            return True, "git pull reciente sobre el propio Centinel"
         if self.dpkg_recent_paths():
             if kind in ("persistence_integrity", "persistence_authfile",
                         "persistence_pam", "persistence_kmod"):

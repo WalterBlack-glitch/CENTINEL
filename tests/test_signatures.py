@@ -3,9 +3,9 @@ import asyncio
 
 import pytest
 
-from centinela.core import EventBus, Severity, ThreatEvent
-from centinela.correlation import signatures as S
-from centinela.correlation.engine import CorrelationEngine
+from centinel.core import EventBus, Severity, ThreatEvent
+from centinel.correlation import signatures as S
+from centinel.correlation.engine import CorrelationEngine
 
 
 def test_http_probe_on_ssh():

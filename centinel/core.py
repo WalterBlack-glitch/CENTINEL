@@ -1,4 +1,4 @@
-"""Núcleo de Centinela: modelo de evento unificado y bus asíncrono.
+"""Núcleo de Centinel: modelo de evento unificado y bus asíncrono.
 
 Todas las capas hablan a través de `ThreatEvent`. Los colectores publican,
 el enriquecimiento y la correlación transforman/anotan, y la presentación

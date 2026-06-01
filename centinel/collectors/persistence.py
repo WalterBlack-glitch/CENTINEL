@@ -133,7 +133,7 @@ class PersistenceCollector(Collector):
         self.interval = max(10.0, interval)
         self._alerted: dict[str, float] = {}
         # Contexto de mantenimiento: silencia alertas durante apt/dpkg, git pull
-        # de Centinela, o el periodo de gracia inicial. Si no se pasa, todas
+        # de Centinel, o el periodo de gracia inicial. Si no se pasa, todas
         # las alertas pasan tal cual (modo paranoico).
         if maintenance is None:
             from ..maintenance import MaintenanceContext
@@ -240,7 +240,7 @@ class PersistenceCollector(Collector):
         out += self._scan_immutable(now)    # capa 15: chattr +i sellando líneas
         out += self._scan_hidden_pids(now)  # capa 16: PIDs ocultos por rootkit
         out += self._scan_bpf(now)          # capa 17: eBPF pinneado
-        out += self._scan_self(now)         # capa 18: integridad del propio Centinela
+        out += self._scan_self(now)         # capa 18: integridad del propio Centinel
         # Persiste baselines firmadas tras este escaneo (best-effort).
         self._bsave("suid", self._suid_baseline)
         self._bsave("integrity", self._integ_baseline)
@@ -257,7 +257,7 @@ class PersistenceCollector(Collector):
     def _filter_maintenance(self, events: list[ThreatEvent],
                             now: float) -> list[ThreatEvent]:
         """Descarta o degrada eventos que coincidan con mantenimiento
-        legítimo (dpkg/apt, git pull de Centinela, periodo de gracia).
+        legítimo (dpkg/apt, git pull de Centinel, periodo de gracia).
         Además coalesce ráfagas del mismo kind: >20 en 60s se reducen a uno."""
         kept: list[ThreatEvent] = []
         for ev in events:
@@ -972,14 +972,14 @@ class PersistenceCollector(Collector):
         self._bpf_baseline = found
         return out
 
-    # ---- capa 18: auto-integridad del propio Centinela ----
+    # ---- capa 18: auto-integridad del propio Centinel ----
 
     def _scan_self(self, now: float) -> list[ThreatEvent]:
         """Si modifican un fichero del propio paquete, dejaríamos de alertar
         en silencio. Se hashea el árbol del paquete al primer escaneo y se
         compara después."""
-        import centinela
-        root = os.path.dirname(os.path.abspath(centinela.__file__))
+        import centinel
+        root = os.path.dirname(os.path.abspath(centinel.__file__))
         cur: dict[str, str] = {}
         for r, _, files in os.walk(root):
             for f in files:
@@ -1000,7 +1000,7 @@ class PersistenceCollector(Collector):
             if old and old != h and self._fire(now, "self:" + p):
                 out.append(ThreatEvent(
                     kind="persistence_selftamper", severity=Severity.CRITICAL,
-                    message=f"Fichero de Centinela MODIFICADO en caliente: {p}",
+                    message=f"Fichero de Centinel MODIFICADO en caliente: {p}",
                     tags={"persistence", "self", "tamper"},
                     enrichment={"path": p, "old": old, "new": h}))
         self._self_baseline = cur

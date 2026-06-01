@@ -35,7 +35,7 @@ from .response.responder import Responder
 from .security import drop_privileges, layers_need_sustained_root, safe_path, valid_iface
 
 
-class Centinela:
+class Centinel:
     def __init__(self, args) -> None:
         self.args = args
         self.runtime_errors: list[str] = []   # fallos en ejecución -> informe
@@ -112,11 +112,11 @@ class Centinela:
         kev = KevCatalog(cache)
         if args.kev_update:
             ok, detail = kev.update()   # descarga al arranque (fuera del hot-path)
-            print(f"[centinela] {detail}")
+            print(f"[centinel] {detail}")
         if kev.available:
-            print(f"[centinela] KEV cargado: {kev.count} CVEs explotados")
+            print(f"[centinel] KEV cargado: {kev.count} CVEs explotados")
         else:
-            print("[centinela] KEV sin datos (usa --kev-update para descargar)")
+            print("[centinel] KEV sin datos (usa --kev-update para descargar)")
         return kev
 
     async def _pipeline(self) -> None:
@@ -149,7 +149,7 @@ class Centinela:
             self.runtime_errors.append(msg)
             if len(self.runtime_errors) > 50:
                 self.runtime_errors.pop(0)
-            print(f"[centinela] aviso: {msg} (capa degradada, app sigue)")
+            print(f"[centinel] aviso: {msg} (capa degradada, app sigue)")
 
     async def _guard(self, name: str, coro) -> None:
         """Envuelve una capa: si revienta, se desactiva sin tumbar el resto.
@@ -178,7 +178,7 @@ class Centinela:
                 active.append(c.name)
                 tasks.append(asyncio.create_task(self._guard(c.name, c.run())))
         if not active:
-            print("[centinela] Aviso: ningún colector disponible "
+            print("[centinel] Aviso: ningún colector disponible "
                   "(¿permisos? ¿auth.log? ¿scapy?). Corriendo en vacío.")
         # A-2: soltar privilegios una vez los colectores abrieron sus recursos
         # privilegiados (socket de captura / fd de auth.log).
@@ -197,18 +197,18 @@ class Centinela:
                     RuntimeError("omitido: ninguna capa activa (modo degradado, "
                                  "root retenido para diagnóstico)"))
             elif need:
-                print(f"[centinela] privilegios retenidos: requieren root sostenido "
+                print(f"[centinel] privilegios retenidos: requieren root sostenido "
                       f"-> {', '.join(need)}. Usa --force-drop para forzar el drop.")
                 if getattr(self.args, "force_drop", False):
                     ok, why = drop_privileges(self.args.user)
-                    print(f"[centinela] drop forzado: {why}")
+                    print(f"[centinel] drop forzado: {why}")
             elif self.runtime_errors:
-                print(f"[centinela] privilegios retenidos: ya hay fallos de capa; "
+                print(f"[centinel] privilegios retenidos: ya hay fallos de capa; "
                       f"root se mantiene para que puedas inspeccionar.")
             else:
                 ok, why = drop_privileges(self.args.user)
                 if ok:
-                    print(f"[centinela] privilegios soltados a '{self.args.user}'")
+                    print(f"[centinel] privilegios soltados a '{self.args.user}'")
                 else:
                     self._note_error("drop_privileges",
                         RuntimeError(f"no se pudo soltar ({why}); sigo con root."))
@@ -222,7 +222,7 @@ class Centinela:
                 from .feedback import write_report
                 extra = "\n".join(self.runtime_errors)
                 path = write_report(extra="Fallos de capas en ejecución:\n" + extra)
-                print(f"[centinela] {len(self.runtime_errors)} fallo(s) de capa "
+                print(f"[centinel] {len(self.runtime_errors)} fallo(s) de capa "
                       f"durante la sesión. Informe para tu asistente en: {path}")
 
 
@@ -242,9 +242,9 @@ def _load_oui(path: str | None) -> dict[str, str]:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(prog="centinela",
-        description="Centinela — rastreo multicapa de amenazas en tiempo real")
-    p.add_argument("--db", default="centinela.db", help="ruta del event store")
+    p = argparse.ArgumentParser(prog="centinel",
+        description="Centinel — rastreo multicapa de amenazas en tiempo real")
+    p.add_argument("--db", default="centinel.db", help="ruta del event store")
     p.add_argument("--simulate", action="store_true",
                    help="generar ataques sintéticos (demo sin root)")
     p.add_argument("--sniff", action="store_true",
@@ -309,7 +309,7 @@ def main() -> None:
                    help="acepta el estado actual como nueva baseline limpia "
                         "(borra las baselines firmadas y vuelve a fijarlas en "
                         "el próximo arranque). Úsalo tras hacer apt upgrade "
-                        "consciente, o git pull de Centinela.")
+                        "consciente, o git pull de Centinel.")
     p.add_argument("--maintenance-grace", type=float, default=90.0,
                    help="segundos tras el arranque sin emitir alertas de "
                         "persistencia (deja que las baselines se estabilicen).")
@@ -339,14 +339,14 @@ def main() -> None:
         # Borra baselines firmadas: el próximo escaneo fija una nueva limpia.
         import shutil
         bd = args.baseline_dir or os.path.join(os.path.expanduser("~"),
-                                               ".local", "share", "centinela",
+                                               ".local", "share", "centinel",
                                                "baselines")
         if os.path.isdir(bd):
             shutil.rmtree(bd, ignore_errors=True)
-            print(f"[centinela] baselines borradas en {bd}. "
+            print(f"[centinel] baselines borradas en {bd}. "
                   f"En el próximo arranque se fijarán nuevas con el estado actual.")
         else:
-            print(f"[centinela] no había baselines en {bd}; nada que hacer.")
+            print(f"[centinel] no había baselines en {bd}; nada que hacer.")
         sys.exit(0)
 
     if args.doctor:
@@ -354,7 +354,7 @@ def main() -> None:
         unresolved = [f for f in findings if f["level"] in ("error", "warn")]
         if unresolved:
             path = write_report(findings)
-            print(f"[centinela] informe de feedback escrito en: {path}")
+            print(f"[centinel] informe de feedback escrito en: {path}")
         sys.exit(1 if has_blocking_errors(findings) else 0)
 
     findings = []
@@ -364,18 +364,18 @@ def main() -> None:
         unresolved = [f for f in findings if f["level"] in ("error", "warn")]
         if unresolved:
             path = write_report(findings)
-            print(f"[centinela] {len(unresolved)} cosa(s) que no pude arreglar "
+            print(f"[centinel] {len(unresolved)} cosa(s) que no pude arreglar "
                   f"solo. Informe para tu asistente en: {path}")
-            print("[centinela] continúo en modo best-effort "
+            print("[centinel] continúo en modo best-effort "
                   "(las capas que fallen se desactivan, no tumban la app).")
 
     try:
-        asyncio.run(Centinela(args).run())
+        asyncio.run(Centinel(args).run())
     except KeyboardInterrupt:
-        print("\n[centinela] detenido")
+        print("\n[centinel] detenido")
     except Exception as exc:   # noqa: BLE001 — captura para feedback, no crash mudo
         path = write_report(findings, exc=exc)
-        print(f"[centinela] error inesperado en ejecución. "
+        print(f"[centinel] error inesperado en ejecución. "
               f"Informe para tu asistente en: {path}", file=sys.stderr)
         sys.exit(1)
 

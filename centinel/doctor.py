@@ -1,6 +1,6 @@
 """Doctor: diagnostica (y arregla lo seguro) antes de arrancar.
 
-Filosofía: que Centinela no falle con un traceback opaco. Antes de levantar las
+Filosofía: que Centinel no falle con un traceback opaco. Antes de levantar las
 capas, revisa las causas habituales de error según los flags pedidos, ARREGLA
 automáticamente lo que es seguro (crear el directorio de la BD, ajustar permisos)
 y para el resto imprime el COMANDO exacto de arreglo. Nunca instala paquetes ni
@@ -44,12 +44,12 @@ def _free_port(host: str, start: int, tries: int = 50) -> int | None:
     return None
 
 
-def _writable_fallback_db(name: str = "centinela.db") -> str | None:
+def _writable_fallback_db(name: str = "centinel.db") -> str | None:
     """Devuelve una ruta de BD escribible (home -> XDG -> temp)."""
     import tempfile
     home = os.path.expanduser("~")
     candidates = [home,
-                  os.path.join(home, ".local", "share", "centinela"),
+                  os.path.join(home, ".local", "share", "centinel"),
                   tempfile.gettempdir()]
     for d in candidates:
         try:
@@ -116,7 +116,7 @@ def run(args) -> list[dict]:
             add(OK, f"Privilegios se soltarán a '{getattr(args,'user','nobody')}'")
 
     # 4) Directorio y permisos de la base de datos (ARREGLO automático seguro)
-    db = getattr(args, "db", "centinela.db")
+    db = getattr(args, "db", "centinel.db")
     d = os.path.dirname(os.path.abspath(db))
     db_ok = False
     if not os.path.isdir(d):
@@ -138,7 +138,7 @@ def run(args) -> list[dict]:
             add(FIX, f"Ruta de BD no escribible; reubicada automáticamente a {alt}")
         else:
             add(ERR, f"Sin ubicación escribible para la BD (probé home y temp).",
-                "Usa --db con una ruta escribible, p.ej. --db ~/centinela.db")
+                "Usa --db con una ruta escribible, p.ej. --db ~/centinel.db")
     # endurece permisos de una BD ya existente (debe ser 0600)
     if os.path.exists(db):
         try:
@@ -205,19 +205,19 @@ def run(args) -> list[dict]:
 def _print(findings: list[dict]) -> None:
     errs = sum(1 for x in findings if x["level"] == ERR)
     warns = sum(1 for x in findings if x["level"] == WARN)
-    print("[centinela] diagnóstico previo (doctor):")
+    print("[centinel] diagnóstico previo (doctor):")
     for x in findings:
         line = f"  {_ICON[x['level']]} {x['msg']}"
         print(line)
         if x.get("fix") and x["level"] in (ERR, WARN):
             print(f"        ↳ arreglo: {x['fix']}")
     if errs:
-        print(f"[centinela] {errs} error(es) y {warns} aviso(s). "
+        print(f"[centinel] {errs} error(es) y {warns} aviso(s). "
               f"Revisa los arreglos sugeridos arriba.")
     elif warns:
-        print(f"[centinela] {warns} aviso(s); se puede continuar.")
+        print(f"[centinel] {warns} aviso(s); se puede continuar.")
     else:
-        print("[centinela] todo en orden.")
+        print("[centinel] todo en orden.")
 
 
 def has_blocking_errors(findings: list[dict]) -> bool:

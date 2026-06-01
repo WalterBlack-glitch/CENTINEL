@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_events_severity ON events(severity);
 
 
 class EventStore:
-    def __init__(self, path: str = "centinela.db",
+    def __init__(self, path: str = "centinel.db",
                  commit_every: int = 50, flush_secs: float = 1.0) -> None:
         self.path = str(Path(path))
         # M-5: el .db contiene IPs/usuarios/logs sensibles -> no world-readable.

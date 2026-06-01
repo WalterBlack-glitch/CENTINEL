@@ -139,7 +139,7 @@ class TerminalDashboard:
 
     async def _run_plain(self, queue: asyncio.Queue) -> None:
         import time as _t
-        print("[centinela] rich no instalado — modo texto plano")
+        print("[centinel] rich no instalado — modo texto plano")
         while True:
             ev = await queue.get()
             # _safe quita escapes ANSI; en texto plano no hay markup que escapar.

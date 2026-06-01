@@ -4,9 +4,9 @@ import socket
 
 import pytest
 
-from centinela.core import EventBus, Severity
-from centinela.collectors.honeypot import HoneypotCollector, _clean
-from centinela.correlation.engine import CorrelationEngine
+from centinel.core import EventBus, Severity
+from centinel.collectors.honeypot import HoneypotCollector, _clean
+from centinel.correlation.engine import CorrelationEngine
 
 
 def _free_port() -> int:

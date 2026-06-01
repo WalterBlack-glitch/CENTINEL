@@ -2,11 +2,11 @@
 import os
 import types
 
-from centinela.doctor import run, has_blocking_errors, OK, ERR, FIX
+from centinel.doctor import run, has_blocking_errors, OK, ERR, FIX
 
 
 def _args(**kw):
-    base = dict(db="centinela.db", web=False, web_host="127.0.0.1",
+    base = dict(db="centinel.db", web=False, web_host="127.0.0.1",
                web_port=8787, geo=None, sniff=False, honeypot=None,
                no_drop=False, user="nobody", kev_cache=None, kev_update=False)
     base.update(kw)
@@ -28,7 +28,7 @@ def test_crea_directorio_de_bd(tmp_path):
 
 
 def test_web_sin_deps_es_error(monkeypatch):
-    import centinela.doctor as d
+    import centinel.doctor as d
     monkeypatch.setattr(d, "_has", lambda m: False)
     f = run(_args(web=True))
     assert has_blocking_errors(f)
@@ -47,7 +47,7 @@ def test_endurece_permisos_de_bd_existente(tmp_path):
 
 def test_puerto_ocupado_se_auto_arregla(tmp_path):
     import socket
-    from centinela.doctor import FIX
+    from centinel.doctor import FIX
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -64,7 +64,7 @@ def test_puerto_ocupado_se_auto_arregla(tmp_path):
 
 
 def test_db_no_escribible_se_reubica(monkeypatch, tmp_path):
-    from centinela.doctor import FIX
+    from centinel.doctor import FIX
     # Forzamos un directorio de BD no escribible: el doctor debe reubicar.
     bad = tmp_path / "nope" / "c.db"
     monkeypatch.setattr("os.makedirs",

@@ -1,6 +1,6 @@
 """Utilidades de endurecimiento: drop de privilegios y validación de rutas.
 
-Centinela necesita root SOLO para abrir el socket de captura (scapy) y leer
+Centinel necesita root SOLO para abrir el socket de captura (scapy) y leer
 auth.log. Tras abrir esos recursos, suelta privilegios para que el resto del
 pipeline (parser de input hostil, correlación, DNS, render) no corra como root.
 """
@@ -64,9 +64,9 @@ def safe_path(p: str, *, must_exist: bool = False,
     if base:
         broot = Path(base).resolve()
         if not (rp == broot or broot in rp.parents):
-            raise SystemExit(f"[centinela] ruta fuera de {base}: {p}")
+            raise SystemExit(f"[centinel] ruta fuera de {base}: {p}")
     if must_exist and not rp.is_file():
-        raise SystemExit(f"[centinela] no existe o no es archivo: {p}")
+        raise SystemExit(f"[centinel] no existe o no es archivo: {p}")
     return str(rp)
 
 
@@ -86,6 +86,6 @@ def valid_iface(iface: str | None) -> str | None:
             return iface  # no podemos validar; confiamos en el operador
     if iface not in ifaces:
         raise SystemExit(
-            f"[centinela] interfaz desconocida: {iface} "
+            f"[centinel] interfaz desconocida: {iface} "
             f"(disponibles: {', '.join(sorted(ifaces)) or 'ninguna'})")
     return iface

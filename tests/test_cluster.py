@@ -1,5 +1,5 @@
 """Tests de la atribución de actor entre IPs (clustering de huella)."""
-from centinela.correlation.cluster import (
+from centinel.correlation.cluster import (
     ActorClusterer, _jaccard, MIN_FINGERPRINT, ATTRIBUTION_MIN_IPS,
     MAX_CLUSTERS,
 )

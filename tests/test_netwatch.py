@@ -1,7 +1,7 @@
 """Tests del tracker proceso-malicioso <-> IP (netwatch)."""
 import os
 
-from centinela.collectors.netwatch import (
+from centinel.collectors.netwatch import (
     _parse_addr, _is_external, NetWatchCollector,
 )
 

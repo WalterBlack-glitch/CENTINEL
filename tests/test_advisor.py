@@ -1,5 +1,5 @@
 """Tests del asesor de remediación."""
-from centinela.advisor import advise, known_kinds, _MAX_STEPS, _clean
+from centinel.advisor import advise, known_kinds, _MAX_STEPS, _clean
 
 
 def test_kind_desconocido_devuelve_none():

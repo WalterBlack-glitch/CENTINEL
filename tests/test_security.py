@@ -3,11 +3,11 @@ import json
 
 import pytest
 
-from centinela.core import EventBus, Severity, ThreatEvent
-from centinela.collectors.authlog import AuthLogCollector
-from centinela.collectors.journald import JournaldCollector
-from centinela.correlation.engine import CorrelationEngine, MAX_ACTORS
-from centinela.response.firewall import Firewall
+from centinel.core import EventBus, Severity, ThreatEvent
+from centinel.collectors.authlog import AuthLogCollector
+from centinel.collectors.journald import JournaldCollector
+from centinel.correlation.engine import CorrelationEngine, MAX_ACTORS
+from centinel.response.firewall import Firewall
 
 
 # ---- C-2 / B-1: anti-spoofing e IP inválida en auth.log ----

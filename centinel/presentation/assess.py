@@ -54,7 +54,7 @@ class AssessmentDashboard:
 
     async def run(self) -> None:
         q = self.bus.subscribe()
-        print(f"{_C['bold']}🛰  Centinela — modo EXAMEN "
+        print(f"{_C['bold']}🛰  Centinel — modo EXAMEN "
               f"(ventana {self.window:.0f}s, umbral bloqueo "
               f"{self.responder.threshold:.0f}, firewall: "
               f"{self.responder.fw.mode}/{self.responder.fw.backend or 'n/a'})"

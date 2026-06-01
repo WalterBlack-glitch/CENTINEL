@@ -3,7 +3,7 @@
 KEV es la lista oficial y gratuita de CVEs con explotación CONFIRMADA en el
 mundo real. Es la mejor señal pública de "esto se está usando ahora mismo".
 
-Centinela lo usa para priorización: si una firma de explotación
+Centinel lo usa para priorización: si una firma de explotación
 (`correlation/signatures.py`) detecta un CVE presente en KEV, el evento sube de
 severidad y se etiqueta `kev` (y `ransomware` si KEV marca uso en campañas de
 ransomware).
@@ -90,7 +90,7 @@ class KevCatalog:
         try:
             ctx = ssl.create_default_context()  # verifica certificado y hostname
             req = urllib.request.Request(KEV_URL, headers={
-                "User-Agent": "Centinela-KEV/1.0", "Accept": "application/json"})
+                "User-Agent": "Centinel-KEV/1.0", "Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
                 if resp.status != 200:
                     return False, f"HTTP {resp.status}"
