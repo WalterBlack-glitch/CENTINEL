@@ -165,6 +165,18 @@ class Centinel:
             self._note_error(f"capa '{name}'", exc)
 
     async def run(self) -> None:
+        # Single-instance: si ya hay otra corriendo, no arrancamos. Dos
+        # CENTINEL a la vez duplicarían alertas y corromperían las baselines
+        # (cada una "ve" lo que la otra cambia y lo trata como hostil).
+        self._lock = None
+        if not getattr(self.args, "allow_overlap", False):
+            from .service import SingleInstance
+            self._lock = SingleInstance()
+            ok, why = self._lock.acquire()
+            if not ok:
+                print(f"[centinel] no arranco: {why}. Usa --allow-overlap si "
+                      f"de verdad quieres dos instancias (no recomendado).")
+                return
         tasks = [asyncio.create_task(self._pipeline()),
                  asyncio.create_task(self._guard("dashboard", self.dashboard.run()))]
         active = []
@@ -218,6 +230,8 @@ class Centinel:
             pass
         finally:
             self.store.close()
+            if self._lock:
+                self._lock.release()
             if self.runtime_errors:
                 from .feedback import write_report
                 extra = "\n".join(self.runtime_errors)
@@ -305,6 +319,16 @@ def main() -> None:
                    help="token Bearer obligatorio para el dashboard. Si "
                         "expones --web-host fuera de loopback y no lo pasas, "
                         "se autogenera y se imprime al arranque.")
+    p.add_argument("--install-service", action="store_true",
+                   help="instala CENTINEL como servicio systemd con arranque "
+                        "primario (antes de multi-user.target) y hardening.")
+    p.add_argument("--uninstall-service", action="store_true",
+                   help="desinstala el servicio systemd.")
+    p.add_argument("--status-service", action="store_true",
+                   help="muestra el estado del servicio systemd.")
+    p.add_argument("--allow-overlap", action="store_true",
+                   help="permite múltiples instancias (desactiva el lock "
+                        "single-instance). No recomendado.")
     p.add_argument("--ack-baseline", action="store_true",
                    help="acepta el estado actual como nueva baseline limpia "
                         "(borra las baselines firmadas y vuelve a fijarlas en "
@@ -334,6 +358,14 @@ def main() -> None:
                 "(evita bloquear IPs reales con tráfico ficticio)")
     from .doctor import run as doctor_run, has_blocking_errors
     from .feedback import write_report
+
+    if args.install_service or args.uninstall_service or args.status_service:
+        from .service import install, uninstall, status
+        if args.install_service:
+            sys.exit(install())
+        if args.uninstall_service:
+            sys.exit(uninstall())
+        sys.exit(status())
 
     if args.ack_baseline:
         # Borra baselines firmadas: el próximo escaneo fija una nueva limpia.
