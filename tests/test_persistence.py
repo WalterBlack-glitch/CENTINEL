@@ -205,6 +205,22 @@ def test_maintenance_coalesce_burst(monkeypatch):
     assert int(out[0].severity) <= 3   # se rebaja a MEDIUM
 
 
+def test_autostart_desktop_nuevo_y_malicioso(tmp_path, monkeypatch):
+    auto = tmp_path / "autostart"; auto.mkdir()
+    (auto / "ok.desktop").write_text("[Desktop Entry]\nExec=/usr/bin/firefox\n")
+    monkeypatch.setattr(PersistenceCollector, "_AUTOSTART_DIRS", (str(auto),))
+    monkeypatch.setattr(PersistenceCollector, "_home_dirs",
+                        staticmethod(lambda: []))
+    w = PersistenceCollector(bus=None)
+    w._scan_autostart(now=1.0)   # fija baseline
+    # Aparece un .desktop malicioso (Exec= apuntando a /tmp)
+    (auto / "evil.desktop").write_text("[Desktop Entry]\nExec=/tmp/.implant\n")
+    evs = w._scan_autostart(now=2.0)
+    kinds = [(int(e.severity), e.message) for e in evs]
+    # Debe haber al menos un CRITICAL por Exec=/tmp/
+    assert any(sev == 4 for sev, _ in kinds)
+
+
 def test_authfiles_modificacion(tmp_path, monkeypatch):
     f = tmp_path / "passwd"; f.write_text("root:x:0:0::/root:/bin/bash\n")
     monkeypatch.setattr(P, "_AUTH_FILES", (str(f),))

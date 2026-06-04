@@ -181,6 +181,9 @@ class PersistenceCollector(Collector):
         self._auth_baseline = self._bload("authfiles")
         self._pam_baseline = self._bload("pam")
         self._bpf_baseline = self._bload("bpf", as_set=True)
+        # Capas 19-20: autostart (XDG .desktop + systemd user) y huérfanos.
+        self._auto_baseline: dict[str, str] | None = self._bload("autostart")
+        self._orphan_alerted: set[str] = set()
 
     def _bload(self, name: str, as_set: bool = False):
         if not self._store:
@@ -241,6 +244,8 @@ class PersistenceCollector(Collector):
         out += self._scan_hidden_pids(now)  # capa 16: PIDs ocultos por rootkit
         out += self._scan_bpf(now)          # capa 17: eBPF pinneado
         out += self._scan_self(now)         # capa 18: integridad del propio Centinel
+        out += self._scan_autostart(now)    # capa 19: autostart GUI/usuario
+        out += self._scan_orphans(now)      # capa 20: procesos PPID=1 sospechosos
         # Persiste baselines firmadas tras este escaneo (best-effort).
         self._bsave("suid", self._suid_baseline)
         self._bsave("integrity", self._integ_baseline)
@@ -250,6 +255,7 @@ class PersistenceCollector(Collector):
         self._bsave("pam", self._pam_baseline)
         self._bsave("bpf", self._bpf_baseline)
         self._bsave("selfhash", self._self_baseline)
+        self._bsave("autostart", self._auto_baseline)
         # Filtro de mantenimiento: degrada/descarta alertas legítimas.
         out = self._filter_maintenance(out, now)
         return out[:128]
@@ -1004,6 +1010,137 @@ class PersistenceCollector(Collector):
                     tags={"persistence", "self", "tamper"},
                     enrichment={"path": p, "old": old, "new": h}))
         self._self_baseline = cur
+        return out
+
+    # ---- capa 19: autostart GUI/usuario (.desktop + systemd --user) ----
+
+    _AUTOSTART_DIRS = ("/etc/xdg/autostart",)
+    _USER_AUTO_REL = (".config/autostart", ".config/systemd/user",
+                       ".local/share/systemd/user")
+
+    def _scan_autostart(self, now: float) -> list[ThreatEvent]:
+        """Detecta autostart de escritorio y servicios de usuario nuevos o
+        modificados. Vector típico: 'cmd que se inicia y no sé de qué es'.
+        Marca como CRITICAL si el Exec/ExecStart apunta a /tmp /dev/shm o a
+        un binario borrado; HIGH si solo es nuevo en una ruta legítima."""
+        cur: dict[str, str] = {}
+        out: list[ThreatEvent] = []
+        dirs = list(self._AUTOSTART_DIRS)
+        for h in self._home_dirs():
+            for r in self._USER_AUTO_REL:
+                dirs.append(os.path.join(h, r))
+        for d in dirs:
+            try:
+                names = os.listdir(d)
+            except OSError:
+                continue
+            for name in names:
+                p = os.path.join(d, name)
+                if not p.endswith((".desktop", ".service", ".timer")):
+                    continue
+                h = self._sha256(p)
+                if not h:
+                    continue
+                cur[p] = h
+                # Patrón ofensivo en el contenido: Exec=/tmp/..., curl|sh, etc.
+                hit = self._grep_bad(p, only=("Exec=", "ExecStart="))
+                if hit and self._fire(now, "auto-bad:" + p):
+                    out.append(ThreatEvent(
+                        kind="persistence_autostart", severity=Severity.CRITICAL,
+                        message=f"Autostart sospechoso: {p} -> {_clean(hit, 140)}",
+                        tags={"persistence", "autostart"},
+                        enrichment={"path": p, "line": _clean(hit, 200)}))
+        if self._auto_baseline is None:
+            self._auto_baseline = cur
+            return out
+        for p, h in cur.items():
+            old = self._auto_baseline.get(p)
+            if old is None and self._fire(now, "auto-new:" + p):
+                out.append(ThreatEvent(
+                    kind="persistence_autostart", severity=Severity.HIGH,
+                    message=f"Autostart NUEVO: {p}",
+                    tags={"persistence", "autostart"},
+                    enrichment={"path": p}))
+            elif old and old != h and self._fire(now, "auto-mod:" + p):
+                out.append(ThreatEvent(
+                    kind="persistence_autostart", severity=Severity.HIGH,
+                    message=f"Autostart MODIFICADO: {p}",
+                    tags={"persistence", "autostart"},
+                    enrichment={"path": p}))
+        self._auto_baseline = cur
+        return out
+
+    # ---- capa 20: procesos huérfanos sospechosos (PPID=1) ----
+
+    _SAFE_EXE_PREFIXES = ("/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/",
+                           "/opt/", "/snap/", "/var/lib/snapd/")
+
+    def _scan_orphans(self, now: float) -> list[ThreatEvent]:
+        """Procesos con PPID=1 (re-parentados a init/systemd) cuyo binario
+        vive en /tmp, /dev/shm, /var/tmp, en home oculto (.cache/.local/bin),
+        o cuyo /proc/<pid>/exe apunta a un fichero borrado (' (deleted)').
+        Es la firma típica del 'cmd raro que se inició solo y no sé de qué es'."""
+        out: list[ThreatEvent] = []
+        try:
+            pids = [int(n) for n in os.listdir("/proc") if n.isdigit()]
+        except OSError:
+            return out
+        per_exe: dict[str, list[int]] = {}
+        for pid in pids:
+            try:
+                with open(f"/proc/{pid}/status") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            ppid = 0
+            for ln in text.splitlines():
+                if ln.startswith("PPid:"):
+                    try:
+                        ppid = int(ln.split()[1])
+                    except (ValueError, IndexError):
+                        pass
+                    break
+            if ppid != 1:
+                continue
+            try:
+                exe = os.readlink(f"/proc/{pid}/exe")
+            except OSError:
+                continue
+            per_exe.setdefault(exe.split(" (deleted)")[0], []).append(pid)
+            bad = (exe.endswith(" (deleted)")
+                   or exe.startswith(("/tmp/", "/dev/shm/", "/var/tmp/"))
+                   or "/.cache/" in exe
+                   or not any(exe.startswith(p) for p in self._SAFE_EXE_PREFIXES))
+            if not bad:
+                continue
+            key = f"orphan:{exe}:{pid}"
+            if key in self._orphan_alerted:
+                continue
+            self._orphan_alerted.add(key)
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmdline = f.read().replace(b"\x00", b" ").decode(
+                        errors="replace").strip()
+            except OSError:
+                cmdline = ""
+            out.append(ThreatEvent(
+                kind="persistence_orphan", severity=Severity.CRITICAL,
+                message=f"Proceso huérfano (PPID=1) sospechoso PID {pid}: "
+                        f"exe={_clean(exe, 120)} cmd={_clean(cmdline, 120)}",
+                tags={"persistence", "orphan", "host"},
+                enrichment={"pid": pid, "exe": _clean(exe, 200),
+                            "cmdline": _clean(cmdline, 200)}))
+            if len(out) >= 8:
+                break
+        # Múltiples instancias del mismo binario huérfano (>3) = anómalo.
+        for exe, pids_e in per_exe.items():
+            if len(pids_e) >= 4 and self._fire(now, "multi:" + exe):
+                out.append(ThreatEvent(
+                    kind="persistence_orphan", severity=Severity.HIGH,
+                    message=f"{len(pids_e)} instancias huérfanas del mismo "
+                            f"binario: {_clean(exe, 120)} (PIDs {pids_e[:5]})",
+                    tags={"persistence", "orphan", "multi"},
+                    enrichment={"exe": _clean(exe, 200), "count": len(pids_e)}))
         return out
 
     # ---- util ----
