@@ -54,6 +54,10 @@ def layers_need_sustained_root(args) -> list[str]:
         need.append("--rootcheck (cron/SUID de root, integridad)")
     if getattr(args, "netwatch", False):
         need.append("--netwatch (visibilidad total de procesos)")
+    if getattr(args, "dnswatch", False):
+        need.append("--dnswatch (CAP_NET_RAW para sniff de DNS)")
+    if getattr(args, "sniff", False):
+        need.append("--sniff (CAP_NET_RAW para captura de paquetes)")
     return need
 
 

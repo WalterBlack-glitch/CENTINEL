@@ -22,6 +22,7 @@ from .collectors.simulator import SimulatorCollector
 from .collectors.honeypot import HoneypotCollector
 from .collectors.netwatch import NetWatchCollector
 from .collectors.persistence import PersistenceCollector
+from .collectors.dnswatch import DNSWatchCollector
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -95,6 +96,9 @@ class Centinel:
         if args.netwatch:
             self.collectors.append(
                 NetWatchCollector(self.bus, interval=args.netwatch_interval))
+        if args.dnswatch:
+            self.collectors.append(
+                DNSWatchCollector(self.bus, valid_iface(args.iface)))
         if args.rootcheck:
             from .maintenance import MaintenanceContext
             maint = None if args.maintenance_off else MaintenanceContext(
@@ -286,6 +290,11 @@ def main() -> None:
                         "binarios sospechosos (backdoors/C2). Root = visión total")
     p.add_argument("--netwatch-interval", type=float, default=10.0,
                    help="segundos entre escaneos de /proc del netwatch")
+    p.add_argument("--dnswatch", action="store_true",
+                   help="vigilar consultas DNS y detectar exfiltración (T1048.003): "
+                        "subdominios de alta entropía, túneles DNS (>25 únicos/min), "
+                        "abuso de TXT/NULL y firmas de dnscat/iodine/Cobalt Strike. "
+                        "Requiere root + scapy.")
     p.add_argument("--rootcheck", action="store_true",
                    help="vigilar persistencia: SUID/SGID nuevos o en sitios raros "
                         "y cron/systemd con patrones de backdoor")
