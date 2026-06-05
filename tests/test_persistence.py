@@ -205,6 +205,32 @@ def test_maintenance_coalesce_burst(monkeypatch):
     assert int(out[0].severity) <= 3   # se rebaja a MEDIUM
 
 
+def test_honeyfile_lectura_es_critica(tmp_path, monkeypatch):
+    # Simulamos honey files apuntando a archivos del tmp_path (no /root).
+    honey = tmp_path / "creds.txt"; honey.write_text("canary\n")
+    monkeypatch.setattr(PersistenceCollector, "_HONEY_FILES",
+                        ((str(honey), "canary\n"),))
+    w = PersistenceCollector(bus=None)
+    w._honey_seeded = True   # ya existe, no lo intentamos crear
+    w._scan_honeyfiles(now=1.0)   # baseline
+    import time as _t; _t.sleep(0.05)
+    # Toca atime "leyendo" el fichero
+    os.utime(str(honey), (honey.stat().st_atime + 10, honey.stat().st_mtime))
+    evs = w._scan_honeyfiles(now=2.0)
+    assert any(e.kind == "persistence_honeyfile" and int(e.severity) == 4
+               for e in evs)
+
+
+def test_mitre_mapping_cubre_persistence_kinds():
+    from centinel.alerter import mitre_for
+    # Sanity: las capas grandes tienen TTP mapeado.
+    for k in ("persistence_suid", "persistence_cron", "persistence_kmod",
+              "persistence_ld_preload", "persistence_pam",
+              "persistence_authkeys", "persistence_honeyfile",
+              "persistence_autostart"):
+        assert mitre_for(k) is not None, f"falta TTP para {k}"
+
+
 def test_autostart_desktop_nuevo_y_malicioso(tmp_path, monkeypatch):
     auto = tmp_path / "autostart"; auto.mkdir()
     (auto / "ok.desktop").write_text("[Desktop Entry]\nExec=/usr/bin/firefox\n")

@@ -179,6 +179,11 @@ class Centinel:
                 return
         tasks = [asyncio.create_task(self._pipeline()),
                  asyncio.create_task(self._guard("dashboard", self.dashboard.run()))]
+        if getattr(self.args, "alert_webhook", None):
+            from .alerter import WebhookAlerter
+            al = WebhookAlerter(self.bus_out, self.args.alert_webhook,
+                                min_severity=self.args.alert_min_sev)
+            tasks.append(asyncio.create_task(self._guard("alerter", al.run())))
         active = []
         for c in self.collectors:
             try:
@@ -319,6 +324,12 @@ def main() -> None:
                    help="token Bearer obligatorio para el dashboard. Si "
                         "expones --web-host fuera de loopback y no lo pasas, "
                         "se autogenera y se imprime al arranque.")
+    p.add_argument("--alert-webhook", default=None,
+                   help="URL a la que postear (JSON) cada alerta HIGH/CRITICAL. "
+                        "Slack/Discord/Telegram/cualquier receptor que acepte "
+                        "POST con cuerpo JSON. Rate-limited a 1/30s por kind+IP.")
+    p.add_argument("--alert-min-sev", type=int, default=3,
+                   help="severidad mínima para el webhook (3=HIGH, 4=CRITICAL).")
     p.add_argument("--install-service", action="store_true",
                    help="instala CENTINEL como servicio systemd con arranque "
                         "primario (antes de multi-user.target) y hardening.")

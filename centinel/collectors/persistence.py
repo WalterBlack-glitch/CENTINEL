@@ -184,6 +184,12 @@ class PersistenceCollector(Collector):
         # Capas 19-20: autostart (XDG .desktop + systemd user) y huérfanos.
         self._auto_baseline: dict[str, str] | None = self._bload("autostart")
         self._orphan_alerted: set[str] = set()
+        # Capa 21: honey files. Crea (si no existen) ficheros señuelo con
+        # nombres irresistibles para un atacante. Cualquier acceso (atime
+        # cambia) o modificación = CRITICAL. Es la forma más limpia de
+        # detectar reconocimiento manual o ransomware que enumera /root.
+        self._honey_baseline: dict[str, tuple[float, float]] | None = None
+        self._honey_seeded = False
 
     def _bload(self, name: str, as_set: bool = False):
         if not self._store:
@@ -246,6 +252,7 @@ class PersistenceCollector(Collector):
         out += self._scan_self(now)         # capa 18: integridad del propio Centinel
         out += self._scan_autostart(now)    # capa 19: autostart GUI/usuario
         out += self._scan_orphans(now)      # capa 20: procesos PPID=1 sospechosos
+        out += self._scan_honeyfiles(now)   # capa 21: honey files (canary tokens)
         # Persiste baselines firmadas tras este escaneo (best-effort).
         self._bsave("suid", self._suid_baseline)
         self._bsave("integrity", self._integ_baseline)
@@ -1141,6 +1148,73 @@ class PersistenceCollector(Collector):
                             f"binario: {_clean(exe, 120)} (PIDs {pids_e[:5]})",
                     tags={"persistence", "orphan", "multi"},
                     enrichment={"exe": _clean(exe, 200), "count": len(pids_e)}))
+        return out
+
+    # ---- capa 21: honey files (canary tokens) ----
+
+    _HONEY_FILES = (
+        ("/root/.aws/credentials",
+         "[default]\naws_access_key_id = AKIA__CANARY__DO_NOT_USE__\n"
+         "aws_secret_access_key = canary_centinel_tripwire_do_not_use\n"),
+        ("/root/.ssh/id_rsa_backup",
+         "-----BEGIN CANARY KEY-----\nDO_NOT_USE_TRIPWIRE\n"
+         "-----END CANARY KEY-----\n"),
+        ("/root/passwords.txt",
+         "# admin credentials\nroot:S3cret_canary_centinel_2025\n"
+         "postgres:DB_canary_centinel\n"),
+        ("/etc/admin_backup.conf",
+         "# backup admin creds — canary, CENTINEL tripwire\n"
+         "ADMIN_USER=root\nADMIN_PASS=canary_do_not_use\n"),
+    )
+
+    def _seed_honey(self) -> None:
+        """Crea los ficheros señuelo si no existen y registra su atime/mtime."""
+        if os.name != "posix" or os.geteuid() != 0:
+            # Sin root no podemos sembrar en /root /etc. Saltamos.
+            self._honey_seeded = True
+            return
+        for path, content in self._HONEY_FILES:
+            try:
+                if os.path.exists(path):
+                    continue
+                os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    f.write(content)
+            except OSError:
+                continue
+        self._honey_seeded = True
+
+    def _scan_honeyfiles(self, now: float) -> list[ThreatEvent]:
+        if not self._honey_seeded:
+            self._seed_honey()
+        cur: dict[str, tuple[float, float]] = {}
+        for path, _ in self._HONEY_FILES:
+            try:
+                st = os.stat(path)
+                cur[path] = (st.st_atime, st.st_mtime)
+            except OSError:
+                continue
+        out: list[ThreatEvent] = []
+        if self._honey_baseline is None:
+            self._honey_baseline = cur
+            return out
+        for path, (at, mt) in cur.items():
+            old = self._honey_baseline.get(path)
+            if not old:
+                continue
+            old_at, old_mt = old
+            read = at > old_at + 1.0
+            mod = mt > old_mt + 1.0
+            if (read or mod) and self._fire(now, "honey:" + path):
+                why = "MODIFICADO" if mod else "LEÍDO"
+                out.append(ThreatEvent(
+                    kind="persistence_honeyfile", severity=Severity.CRITICAL,
+                    message=f"Honey file {why}: {path} "
+                            f"(nadie debería tocar este fichero — es señuelo)",
+                    tags={"persistence", "canary", "honeyfile"},
+                    enrichment={"path": path, "modified": mod}))
+        self._honey_baseline = cur
         return out
 
     # ---- util ----
