@@ -71,6 +71,13 @@ class Firewall:
 
     def block(self, ip: str) -> tuple[bool, str]:
         """Intenta bloquear una IP. Devuelve (ejecutado, detalle)."""
+        # Canonicaliza la IP: '::ffff:8.8.8.8', '8.8.008.008' o variantes raras
+        # nunca llegan a nft/iptables como string crudo. ipaddress.ip_address
+        # también valida — si no es IP, devolvemos error sin tocar firewall.
+        try:
+            ip = str(ipaddress.ip_address(ip))
+        except (ValueError, TypeError):
+            return False, "ip inválida"
         if ip in self.blocked:
             return False, "ya bloqueada"
         reason = self._protected(ip)

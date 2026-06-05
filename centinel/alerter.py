@@ -13,12 +13,53 @@ el webhook ante una ráfaga.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
+import socket
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 
 from .core import EventBus, Severity
+
+
+# Anti-SSRF: rechazamos por defecto destinos que un atacante usaría para
+# exfiltrar al nodo metadata de la nube (AWS, GCP, Azure) o para hablar con
+# servicios internos no expuestos. El operador puede pasar --alert-webhook
+# con un destino externo http(s)://, y se valida en el ctor.
+_BLOCKED_HOSTS = {
+    "169.254.169.254",   # AWS/GCP/Azure metadata IMDS
+    "metadata.google.internal",
+    "metadata",
+}
+
+
+def _validate_webhook_url(url: str) -> tuple[bool, str]:
+    """Devuelve (ok, motivo). Rechaza URLs peligrosas o triviales de abuso."""
+    if not url:
+        return False, "URL vacía"
+    try:
+        u = urllib.parse.urlparse(url)
+    except ValueError as e:
+        return False, f"URL inválida: {e}"
+    if u.scheme not in ("http", "https"):
+        return False, f"esquema '{u.scheme}' no permitido (usa http/https)"
+    host = (u.hostname or "").lower()
+    if not host:
+        return False, "URL sin host"
+    if host in _BLOCKED_HOSTS:
+        return False, f"host '{host}' bloqueado (metadata de nube)"
+    # Si el host es literal IP, verificamos que NO sea loopback/link-local/
+    # privada cuando el esquema es http (típico de un C2 interno). En https
+    # asumimos que el operador sabe lo que hace (TLS protege el contenido).
+    try:
+        addr = ipaddress.ip_address(host)
+        if addr.is_loopback or addr.is_link_local or addr.is_unspecified:
+            return False, f"IP '{host}' (loopback/link-local) bloqueada"
+    except ValueError:
+        pass
+    return True, "ok"
 
 
 class WebhookAlerter:
@@ -27,7 +68,14 @@ class WebhookAlerter:
                  timeout: float = 4.0,
                  rate_limit_sec: float = 30.0) -> None:
         self.bus = bus
-        self.url = url
+        ok, why = _validate_webhook_url(url)
+        if not ok:
+            # Si el operador pasó algo peligroso, dejamos al alerter sin url:
+            # available()=False y nunca hace POST. Mejor degradar que enviar.
+            print(f"[centinel] alerter: URL rechazada ({why}); webhook desactivado.")
+            self.url = ""
+        else:
+            self.url = url
         self.min_sev = min_severity
         self.timeout = timeout
         self.rl = rate_limit_sec

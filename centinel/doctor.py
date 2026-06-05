@@ -45,12 +45,22 @@ def _free_port(host: str, start: int, tries: int = 50) -> int | None:
 
 
 def _writable_fallback_db(name: str = "centinel.db") -> str | None:
-    """Devuelve una ruta de BD escribible (home -> XDG -> temp)."""
+    """Devuelve una ruta de BD escribible.
+
+    Endurecimiento: si soy root, NO caigo a /tmp (un atacante local puede
+    pre-crear archivos o symlinks; aunque protected_symlinks=1 mitiga, mejor
+    no exponerse). Preferimos /var/lib/centinel cuando es root.
+    """
     import tempfile
     home = os.path.expanduser("~")
-    candidates = [home,
-                  os.path.join(home, ".local", "share", "centinel"),
-                  tempfile.gettempdir()]
+    candidates: list[str] = []
+    if _is_root():
+        candidates.append("/var/lib/centinel")
+    candidates.extend([home,
+                       os.path.join(home, ".local", "share", "centinel")])
+    if not _is_root():
+        # Solo no-root cae a /tmp como último recurso.
+        candidates.append(tempfile.gettempdir())
     for d in candidates:
         try:
             os.makedirs(d, mode=0o700, exist_ok=True)
