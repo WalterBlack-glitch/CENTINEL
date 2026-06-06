@@ -11,7 +11,7 @@ El valor no está en un solo detector, sino en cómo se combinan las capas:
 
 | Capa | Qué hace | Aporte único |
 |------|----------|--------------|
-| **1. Colectores** | **journald** (por defecto), `auth.log`, sniffer (scapy), ARP, honeypot, persistencia (rootcheck), netwatch, **dnswatch**, **beacon**, simulador | Fuentes pluggables; journald aporta **procedencia confiable** y el sniffer ve la **MAC real** de hosts en tu LAN |
+| **1. Colectores** | **journald** (por defecto), `auth.log`, sniffer (scapy), ARP, honeypot, persistencia (rootcheck), netwatch, **dnswatch**, **beacon**, **execwatch**, simulador | Fuentes pluggables; journald aporta **procedencia confiable** y el sniffer ve la **MAC real** de hosts en tu LAN |
 | **2. Enriquecimiento** | IP→MAC (tabla ARP), MAC→fabricante (OUI), rDNS, LAN/WAN, **KEV de CISA** | Contexto accionable sin depender de APIs externas |
 | **3. Correlación** | Score por actor en ventana deslizante; **detección de periodicidad** (beacon C2) | Detecta fuerza bruta, **password spraying**, **port scan**, **compromiso** (login OK tras N fallos) y **callbacks C2** por su latido regular |
 | **4. Persistencia** | Event store en SQLite **con cadena tamper-evident (HMAC encadenado)** | Auditoría/forense; `top_actors()`; **detecta si alguien editó o borró eventos** (`--verify-log`) |
@@ -70,6 +70,16 @@ sudo centinel --dnswatch --iface eth0
 
 # Combo de red completo: paquetes + procesos↔IP + DNS + beaconing.
 sudo centinel --sniff --netwatch --dnswatch --beacon
+```
+
+### Caza de ejecución fileless / reverse shells (host)
+
+```bash
+# ExecWatch (T1059): vigila los exec de /proc y caza reverse shells
+# (bash -i >& /dev/tcp, nc -e, mkfifo|sh, python pty), descarga-y-ejecución
+# (curl|sh, base64 -d|sh), exec desde /tmp/oculto y —señal clave de RCE—
+# un demonio de red (sshd/nginx/postgres) que lanza una shell.
+sudo centinel --execwatch
 ```
 
 ### Forense y log a prueba de manipulación

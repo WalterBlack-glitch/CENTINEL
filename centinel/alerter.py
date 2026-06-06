@@ -168,6 +168,7 @@ _MITRE = {
     "exfil_dns":                 "T1048.003",
     "beacon_c2":                 "T1071",       # Application Layer Protocol (C2)
     "malicious_process":         "T1059",       # Command and Scripting Interpreter
+    "exec_suspicious":           "T1059.004",   # Unix Shell
 }
 
 

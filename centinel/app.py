@@ -24,6 +24,7 @@ from .collectors.netwatch import NetWatchCollector
 from .collectors.persistence import PersistenceCollector
 from .collectors.dnswatch import DNSWatchCollector
 from .collectors.beacon import BeaconCollector
+from .collectors.execwatch import ExecWatchCollector
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -103,6 +104,9 @@ class Centinel:
         if args.beacon:
             self.collectors.append(
                 BeaconCollector(self.bus, interval=args.beacon_interval))
+        if args.execwatch:
+            self.collectors.append(
+                ExecWatchCollector(self.bus, interval=args.execwatch_interval))
         if args.rootcheck:
             from .maintenance import MaintenanceContext
             maint = None if args.maintenance_off else MaintenanceContext(
@@ -305,6 +309,13 @@ def main() -> None:
                         "Muestrea /proc/net; root = visión total de procesos.")
     p.add_argument("--beacon-interval", type=float, default=5.0,
                    help="segundos entre barridos de conexiones del beacon")
+    p.add_argument("--execwatch", action="store_true",
+                   help="detectar ejecuciones sospechosas (T1059): reverse "
+                        "shells, descarga-y-ejecución (curl|sh), exec desde "
+                        "/tmp y servicios de red que lanzan una shell (RCE). "
+                        "Vigila /proc; root = visión total de procesos.")
+    p.add_argument("--execwatch-interval", type=float, default=2.0,
+                   help="segundos entre barridos de procesos del execwatch")
     p.add_argument("--rootcheck", action="store_true",
                    help="vigilar persistencia: SUID/SGID nuevos o en sitios raros "
                         "y cron/systemd con patrones de backdoor")

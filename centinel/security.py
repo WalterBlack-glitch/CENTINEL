@@ -56,6 +56,8 @@ def layers_need_sustained_root(args) -> list[str]:
         need.append("--netwatch (visibilidad total de procesos)")
     if getattr(args, "beacon", False):
         need.append("--beacon (lectura de /proc/net de todos los procesos)")
+    if getattr(args, "execwatch", False):
+        need.append("--execwatch (visibilidad de exec de todos los procesos)")
     if getattr(args, "dnswatch", False):
         need.append("--dnswatch (CAP_NET_RAW para sniff de DNS)")
     if getattr(args, "sniff", False):
