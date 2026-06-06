@@ -5,6 +5,12 @@ allá de "contar intentos de fuerza bruta": correlaciona varias señales por
 actor y muestra **de dónde proviene** cada amenaza con IP, MAC (cuando es
 visible) y fabricante del dispositivo.
 
+> **Novedades v0.2.0** — log **tamper-evident** (cadena HMAC) con `--report` y
+> `--verify-log`; detección de **C2 por beaconing** (`--beacon`); caza de
+> **ejecución fileless / reverse shells** (`--execwatch`); **digest periódico**
+> al webhook (`--digest-webhook`). Detalle en [CHANGELOG.md](CHANGELOG.md) ·
+> auditoría y plan de versiones en [docs/](docs/).
+
 ## Por qué multicapa
 
 El valor no está en un solo detector, sino en cómo se combinan las capas:
@@ -16,7 +22,7 @@ El valor no está en un solo detector, sino en cómo se combinan las capas:
 | **3. Correlación** | Score por actor en ventana deslizante; **detección de periodicidad** (beacon C2) | Detecta fuerza bruta, **password spraying**, **port scan**, **compromiso** (login OK tras N fallos) y **callbacks C2** por su latido regular |
 | **4. Persistencia** | Event store en SQLite **con cadena tamper-evident (HMAC encadenado)** | Auditoría/forense; `top_actors()`; **detecta si alguien editó o borró eventos** (`--verify-log`) |
 | **5. Presentación** | Dashboard en terminal (`rich`), **modo examen**, **dashboard web** (FastAPI+WebSocket+mapa), **informe forense** (`--report`) | Ranking de actores + feed; mapa mundial con geolocalización; resumen con TTPs de MITRE ATT&CK |
-| **6. Respuesta activa** | Bloqueo en firewall (`nft`/`iptables`) con dry-run; webhook de alertas | Corrige automáticamente al superar el umbral de score; avisa a Slack/Discord/Telegram |
+| **6. Respuesta activa** | Bloqueo en firewall (`nft`/`iptables`) con dry-run; **webhook de alertas** y **digest periódico** | Corrige automáticamente al superar el umbral de score; avisa a Slack/Discord/Telegram al instante y con resumen diario |
 
 > ⚠️ **Sobre la MAC:** una MAC de origen solo es visible para dispositivos en
 > tu mismo dominio de broadcast (tu LAN). Para tráfico de internet, la MAC que
@@ -55,7 +61,8 @@ centinel --oui oui.csv                        # resolver fabricante por MAC
 ```
 
 Flags principales: `--simulate`, `--sniff`, `--iface`, `--no-authlog`,
-`--authlog-path`, `--oui`, `--db`.
+`--authlog-path`, `--oui`, `--db`, `--beacon`, `--execwatch`, `--report`,
+`--verify-log`, `--alert-webhook`, `--digest-webhook`.
 
 ### Caza de C2 moderno (red saliente)
 
