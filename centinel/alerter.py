@@ -166,6 +166,8 @@ _MITRE = {
     "auth_spraying":             "T1110.003",
     "scan_portscan":             "T1046",
     "exfil_dns":                 "T1048.003",
+    "beacon_c2":                 "T1071",       # Application Layer Protocol (C2)
+    "malicious_process":         "T1059",       # Command and Scripting Interpreter
 }
 
 

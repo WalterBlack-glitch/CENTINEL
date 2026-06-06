@@ -22,13 +22,14 @@ Solo lectura. No abre sockets, no ejecuta binarios, no hace red. Sin dependencia
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import os
 import re
 import time
 
 from ..core import Severity, ThreatEvent
 from .base import Collector
+# Parsing de /proc/net compartido con beacon (sin duplicar lógica).
+from ._proc_net import parse_hex_addr as _parse_addr, is_external_ip as _is_external
 
 # Estado TCP ESTABLISHED en /proc/net/tcp (hex)
 _ESTABLISHED = "01"
@@ -43,34 +44,6 @@ _ALERT_TTL = 300.0         # no repetir la misma (pid,ip) en este tiempo
 
 def _clean(s: str, limit: int = 256) -> str:
     return _CTRL.sub("", s)[:limit]
-
-
-def _parse_addr(hexaddr: str) -> tuple[str, int] | None:
-    """Convierte 'HEXIP:HEXPORT' de /proc/net/tcp(6) en (ip, puerto)."""
-    try:
-        ip_hex, port_hex = hexaddr.split(":")
-        port = int(port_hex, 16)
-        if len(ip_hex) == 8:            # IPv4, little-endian por bytes
-            b = bytes.fromhex(ip_hex)
-            ip = ".".join(str(x) for x in reversed(b))
-        elif len(ip_hex) == 32:         # IPv6: 4 palabras de 32 bits, le por palabra
-            words = [ip_hex[i:i+8] for i in range(0, 32, 8)]
-            raw = b"".join(bytes.fromhex(w)[::-1] for w in words)
-            ip = str(ipaddress.IPv6Address(raw))
-        else:
-            return None
-        return ip, port
-    except (ValueError, ipaddress.AddressValueError):
-        return None
-
-
-def _is_external(ip: str) -> bool:
-    try:
-        a = ipaddress.ip_address(ip)
-    except ValueError:
-        return False
-    return not (a.is_private or a.is_loopback or a.is_link_local
-                or a.is_multicast or a.is_reserved or a.is_unspecified)
 
 
 class NetWatchCollector(Collector):

@@ -19,8 +19,9 @@ import hashlib
 import hmac
 import json
 import os
-import secrets
 import tempfile
+
+from .keyring import load_or_create_key
 
 
 _KEY_NAME = ".key"
@@ -61,34 +62,8 @@ class BaselineStore:
         self._key = self._load_or_create_key()
 
     def _load_or_create_key(self) -> bytes:
-        kp = os.path.join(self.dir, _KEY_NAME)
-        # Lectura O_NOFOLLOW: si alguien sustituye .key por symlink, fallará
-        # (en vez de leer un archivo arbitrario del sistema con perms de root).
-        nofollow = getattr(os, "O_NOFOLLOW", 0)
-        try:
-            fd = os.open(kp, os.O_RDONLY | nofollow)
-            try:
-                k = os.read(fd, 4096)
-            finally:
-                os.close(fd)
-            if len(k) >= 32:
-                return k
-        except OSError:
-            pass
-        k = secrets.token_bytes(32)
-        try:
-            # O_EXCL evita race con un atacante que pre-cree el path; si falla
-            # porque ya existe, lo intentamos sobreescribir sin seguir symlinks.
-            try:
-                fd = os.open(kp, os.O_WRONLY | os.O_CREAT | os.O_EXCL
-                             | nofollow, 0o600)
-            except FileExistsError:
-                fd = os.open(kp, os.O_WRONLY | os.O_TRUNC | nofollow, 0o600)
-            with os.fdopen(fd, "wb") as f:
-                f.write(k)
-        except OSError:
-            pass
-        return k
+        # Endurecimiento (O_NOFOLLOW/O_EXCL/0600) centralizado en keyring.
+        return load_or_create_key(os.path.join(self.dir, _KEY_NAME))
 
     def _path(self, name: str) -> str:
         # `name` viene del propio código, pero saneamos por si acaso.

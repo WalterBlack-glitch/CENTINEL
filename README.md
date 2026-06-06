@@ -11,12 +11,12 @@ El valor no está en un solo detector, sino en cómo se combinan las capas:
 
 | Capa | Qué hace | Aporte único |
 |------|----------|--------------|
-| **1. Colectores** | **journald** (por defecto), `auth.log`, sniffer (scapy), ARP, simulador | Fuentes pluggables; journald aporta **procedencia confiable** y el sniffer ve la **MAC real** de hosts en tu LAN |
-| **2. Enriquecimiento** | IP→MAC (tabla ARP), MAC→fabricante (OUI), rDNS, LAN/WAN | Contexto accionable sin depender de APIs externas |
-| **3. Correlación** | Score por actor en ventana deslizante | Detecta fuerza bruta, **password spraying**, **port scan** y **compromiso** (login OK tras N fallos) |
-| **4. Persistencia** | Event store en SQLite | Auditoría/forense; `top_actors()` |
-| **5. Presentación** | Dashboard en terminal (`rich`), **modo examen**, **dashboard web** (FastAPI+WebSocket+mapa) | Ranking de actores + feed; mapa mundial con geolocalización |
-| **6. Respuesta activa** | Bloqueo en firewall (`nft`/`iptables`) con dry-run | Corrige automáticamente al superar el umbral de score |
+| **1. Colectores** | **journald** (por defecto), `auth.log`, sniffer (scapy), ARP, honeypot, persistencia (rootcheck), netwatch, **dnswatch**, **beacon**, simulador | Fuentes pluggables; journald aporta **procedencia confiable** y el sniffer ve la **MAC real** de hosts en tu LAN |
+| **2. Enriquecimiento** | IP→MAC (tabla ARP), MAC→fabricante (OUI), rDNS, LAN/WAN, **KEV de CISA** | Contexto accionable sin depender de APIs externas |
+| **3. Correlación** | Score por actor en ventana deslizante; **detección de periodicidad** (beacon C2) | Detecta fuerza bruta, **password spraying**, **port scan**, **compromiso** (login OK tras N fallos) y **callbacks C2** por su latido regular |
+| **4. Persistencia** | Event store en SQLite **con cadena tamper-evident (HMAC encadenado)** | Auditoría/forense; `top_actors()`; **detecta si alguien editó o borró eventos** (`--verify-log`) |
+| **5. Presentación** | Dashboard en terminal (`rich`), **modo examen**, **dashboard web** (FastAPI+WebSocket+mapa), **informe forense** (`--report`) | Ranking de actores + feed; mapa mundial con geolocalización; resumen con TTPs de MITRE ATT&CK |
+| **6. Respuesta activa** | Bloqueo en firewall (`nft`/`iptables`) con dry-run; webhook de alertas | Corrige automáticamente al superar el umbral de score; avisa a Slack/Discord/Telegram |
 
 > ⚠️ **Sobre la MAC:** una MAC de origen solo es visible para dispositivos en
 > tu mismo dominio de broadcast (tu LAN). Para tráfico de internet, la MAC que
@@ -56,6 +56,41 @@ centinel --oui oui.csv                        # resolver fabricante por MAC
 
 Flags principales: `--simulate`, `--sniff`, `--iface`, `--no-authlog`,
 `--authlog-path`, `--oui`, `--db`.
+
+### Caza de C2 moderno (red saliente)
+
+```bash
+# Beaconing C2: callbacks salientes a intervalos regulares (Cobalt Strike,
+# Sliver, Mythic). Detecta el "latido" por su baja varianza temporal.
+sudo centinel --beacon
+
+# Exfiltración por DNS (T1048.003): túneles dnscat/iodine, subdominios de
+# alta entropía, abuso de TXT/NULL.
+sudo centinel --dnswatch --iface eth0
+
+# Combo de red completo: paquetes + procesos↔IP + DNS + beaconing.
+sudo centinel --sniff --netwatch --dnswatch --beacon
+```
+
+### Forense y log a prueba de manipulación
+
+Cada evento se persiste con un **hash HMAC-SHA256 encadenado** con el anterior.
+Si un atacante edita, borra o reordena filas de la BD para tapar sus huellas,
+la cadena deja de cuadrar:
+
+```bash
+centinel --report --db centinel.db        # informe forense: eventos, severidad,
+                                           # TTPs de MITRE, actores e integridad
+centinel --verify-log --db centinel.db     # ¿tocaron la BD? exit 0=intacta, 2=NO
+```
+
+> **Modelo de amenaza honesto:** la clave HMAC vive en `<db>.hmac` (0600). Un
+> atacante que ya es **root** puede leerla y recomputar la cadena. Para defensa
+> real contra root, **ancla** el `head` que imprime `--report` fuera de la
+> máquina (syslog remoto, el webhook, papel): cualquier reescritura divergirá
+> del ancla. Contra atacante no-root, edición offline de la BD o corrupción
+> accidental, la cadena es efectiva por sí sola (y un borrado deja huecos de id
+> que también se reportan).
 
 ## Arquitectura
 

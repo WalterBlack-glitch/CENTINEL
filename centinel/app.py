@@ -23,6 +23,7 @@ from .collectors.honeypot import HoneypotCollector
 from .collectors.netwatch import NetWatchCollector
 from .collectors.persistence import PersistenceCollector
 from .collectors.dnswatch import DNSWatchCollector
+from .collectors.beacon import BeaconCollector
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -99,6 +100,9 @@ class Centinel:
         if args.dnswatch:
             self.collectors.append(
                 DNSWatchCollector(self.bus, valid_iface(args.iface)))
+        if args.beacon:
+            self.collectors.append(
+                BeaconCollector(self.bus, interval=args.beacon_interval))
         if args.rootcheck:
             from .maintenance import MaintenanceContext
             maint = None if args.maintenance_off else MaintenanceContext(
@@ -295,6 +299,12 @@ def main() -> None:
                         "subdominios de alta entropía, túneles DNS (>25 únicos/min), "
                         "abuso de TXT/NULL y firmas de dnscat/iodine/Cobalt Strike. "
                         "Requiere root + scapy.")
+    p.add_argument("--beacon", action="store_true",
+                   help="detectar beaconing C2 (T1071): callbacks salientes a "
+                        "intervalos regulares (Cobalt Strike, Sliver, Mythic). "
+                        "Muestrea /proc/net; root = visión total de procesos.")
+    p.add_argument("--beacon-interval", type=float, default=5.0,
+                   help="segundos entre barridos de conexiones del beacon")
     p.add_argument("--rootcheck", action="store_true",
                    help="vigilar persistencia: SUID/SGID nuevos o en sitios raros "
                         "y cron/systemd con patrones de backdoor")
@@ -372,12 +382,29 @@ def main() -> None:
                    help="omitir el diagnóstico previo de errores")
     p.add_argument("--doctor", action="store_true",
                    help="solo ejecutar el diagnóstico y salir")
+    p.add_argument("--report", action="store_true",
+                   help="imprime un informe forense del event store (resumen de "
+                        "eventos, severidad, TTPs, actores e integridad) y sale.")
+    p.add_argument("--verify-log", action="store_true",
+                   help="verifica la cadena tamper-evident de la BD (¿alguien "
+                        "editó/borró eventos?) y sale. Código de salida 0=intacta.")
     args = p.parse_args()
     if args.simulate and args.respond_live:
         p.error("--respond-live no se permite con --simulate "
                 "(evita bloquear IPs reales con tráfico ficticio)")
     from .doctor import run as doctor_run, has_blocking_errors
     from .feedback import write_report
+
+    if args.report:
+        from .storage.report import forensic_report
+        print(forensic_report(safe_path(args.db)))
+        sys.exit(0)
+
+    if args.verify_log:
+        from .storage.report import verify_log
+        ok, text = verify_log(safe_path(args.db))
+        print(text)
+        sys.exit(0 if ok else 2)
 
     if args.install_service or args.uninstall_service or args.status_service:
         from .service import install, uninstall, status
