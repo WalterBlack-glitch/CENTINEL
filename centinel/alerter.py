@@ -62,6 +62,25 @@ def _validate_webhook_url(url: str) -> tuple[bool, str]:
     return True, "ok"
 
 
+def post_json(url: str, payload: dict, timeout: float = 4.0,
+              user_agent: str = "CENTINEL/1.0") -> bool:
+    """POST JSON best-effort. Devuelve True si 2xx, False si falló. Nunca lanza.
+
+    Compartido por el alerter de eventos y el digest periódico para no duplicar
+    la lógica de red ni el endurecimiento (timeout, UA, manejo de errores)."""
+    if not url:
+        return False
+    try:
+        body = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            url, data=body, method="POST",
+            headers={"Content-Type": "application/json", "User-Agent": user_agent})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return 200 <= getattr(r, "status", 200) < 300
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return False
+
+
 class WebhookAlerter:
     def __init__(self, bus: EventBus, url: str,
                  min_severity: int = int(Severity.HIGH),
@@ -120,15 +139,7 @@ class WebhookAlerter:
                 "ttp": _MITRE.get(ev.kind),
             },
         }
-        body = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            self.url, data=body, method="POST",
-            headers={"Content-Type": "application/json",
-                     "User-Agent": "CENTINEL/1.0"})
-        try:
-            urllib.request.urlopen(req, timeout=self.timeout).close()
-        except (urllib.error.URLError, TimeoutError, OSError):
-            pass
+        post_json(self.url, payload, timeout=self.timeout)
 
     @staticmethod
     def _sev_label(s) -> str:

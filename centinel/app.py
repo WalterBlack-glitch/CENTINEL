@@ -196,6 +196,12 @@ class Centinel:
             al = WebhookAlerter(self.bus_out, self.args.alert_webhook,
                                 min_severity=self.args.alert_min_sev)
             tasks.append(asyncio.create_task(self._guard("alerter", al.run())))
+        if getattr(self.args, "digest_webhook", None):
+            from .digest import DigestService
+            dg = DigestService(safe_path(self.args.db), self.args.digest_webhook,
+                               interval_h=self.args.digest_interval_h)
+            if dg.available():
+                tasks.append(asyncio.create_task(self._guard("digest", dg.run())))
         active = []
         for c in self.collectors:
             try:
@@ -360,6 +366,13 @@ def main() -> None:
                         "POST con cuerpo JSON. Rate-limited a 1/30s por kind+IP.")
     p.add_argument("--alert-min-sev", type=int, default=3,
                    help="severidad mínima para el webhook (3=HIGH, 4=CRITICAL).")
+    p.add_argument("--digest-webhook", default=None,
+                   help="URL a la que postear (JSON) un resumen periódico de la "
+                        "actividad: totales, severidad, top de tipos/actores y "
+                        "estado de la cadena HMAC. Atrapa ráfagas que ningún "
+                        "evento individual cruza el umbral de alerta.")
+    p.add_argument("--digest-interval-h", type=float, default=24.0,
+                   help="cada cuántas horas enviar el digest (por defecto 24).")
     p.add_argument("--install-service", action="store_true",
                    help="instala CENTINEL como servicio systemd con arranque "
                         "primario (antes de multi-user.target) y hardening.")

@@ -251,6 +251,32 @@ class EventStore:
         cols = [c[0] for c in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
+    def summary_since(self, since_ts: float) -> dict:
+        """Resumen de actividad desde `since_ts` (epoch). Para el digest periódico.
+
+        Solo lectura, parametrizado. Devuelve totales, severidad, top de tipos
+        y top de actores en la ventana, además del estado de la cadena."""
+        self._flush()
+        c = self._conn
+        total = c.execute(
+            "SELECT COUNT(*) FROM events WHERE ts >= ?", (since_ts,)).fetchone()[0]
+        sev = {int(s): n for s, n in c.execute(
+            "SELECT severity, COUNT(*) FROM events "
+            "WHERE ts >= ? AND severity IS NOT NULL GROUP BY severity",
+            (since_ts,)).fetchall()}
+        kc = c.execute(
+            "SELECT kind, COUNT(*) n, MAX(severity) sev FROM events "
+            "WHERE ts >= ? AND kind IS NOT NULL AND kind != '' "
+            "GROUP BY kind ORDER BY n DESC LIMIT 10", (since_ts,))
+        kinds = [dict(zip([d[0] for d in kc.description], r)) for r in kc.fetchall()]
+        ac = c.execute(
+            "SELECT src_ip, MAX(score) s, COUNT(*) n, MAX(severity) sev "
+            "FROM events WHERE ts >= ? AND src_ip IS NOT NULL "
+            "GROUP BY src_ip ORDER BY s DESC LIMIT 10", (since_ts,))
+        actors = [dict(zip([d[0] for d in ac.description], r)) for r in ac.fetchall()]
+        return {"since": since_ts, "total": total, "severity": sev,
+                "kinds": kinds, "actors": actors}
+
     def close(self) -> None:
         try:
             self._flush()

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "centinel"
-version = "0.1.0"
+version = "0.2.0"
 description = "Rastreo multicapa de amenazas en tiempo real (IP/MAC, fuerza bruta, scan, spraying)"
 readme = "README.md"
 requires-python = ">=3.10"

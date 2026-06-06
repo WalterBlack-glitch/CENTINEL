@@ -102,6 +102,21 @@ centinel --verify-log --db centinel.db     # ¿tocaron la BD? exit 0=intacta, 2=
 > accidental, la cadena es efectiva por sí sola (y un borrado deja huecos de id
 > que también se reportan).
 
+### Resumen periódico al webhook (digest)
+
+Una ráfaga de eventos MEDIUM puede pasar inadvertida 24h porque ninguno cruza
+el umbral de alerta inmediata. El **digest** envía cada N horas un resumen
+(totales, severidad, top de tipos/actores y **estado de la cadena HMAC**):
+
+```bash
+centinel --digest-webhook https://hooks.tuequipo.dev/centinel \
+         --digest-interval-h 24        # 1 resumen al día (por defecto)
+```
+
+Reutiliza el endurecimiento anti-SSRF del alerter; si la URL es peligrosa
+(metadata de nube, loopback) el digest se desactiva en silencio. Solo lectura
+de la BD: convive con el escritor principal (SQLite WAL).
+
 ## Arquitectura
 
 ```
