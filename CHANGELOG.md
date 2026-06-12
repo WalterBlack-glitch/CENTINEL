@@ -5,6 +5,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Sin publicar]
 
 ### Añadido
+- **Arranque early-boot** (`--install-service --early-boot`): la unidad systemd
+  se instala a nivel `sysinit` (`Before=basic.target`), de modo que CENTINEL
+  arranca **antes que cualquier servicio normal** — un malware persistido como
+  unidad systemd no llega a ejecutarse sin que el baseline ya esté vigilando.
 - **CI en GitHub Actions**: matriz Python 3.10–3.13 sin extras (verifica las
   0 dependencias obligatorias) + job con `[all]` instalado.
 - README: referencia completa de flags, índice de documentación, badges y

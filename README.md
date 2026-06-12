@@ -74,6 +74,19 @@ Flags principales: `--simulate`, `--sniff`, `--iface`, `--no-authlog`,
 `--authlog-path`, `--oui`, `--db`, `--beacon`, `--execwatch`, `--report`,
 `--verify-log`, `--alert-webhook`, `--digest-webhook`.
 
+### Servicio systemd: vigilar desde el arranque
+
+```bash
+sudo centinel --install-service               # arranca antes de las sesiones de usuario
+sudo centinel --install-service --early-boot  # nivel sysinit: ANTES que todos los servicios
+```
+
+Con `--early-boot` la unidad se ordena `Before=basic.target`: ningún servicio
+normal (incluido un malware persistido como unidad systemd, cron o autostart)
+llega a ejecutarse sin que CENTINEL haya baselineado el sistema y esté
+vigilando. La unidad va endurecida (NoNewPrivileges, ProtectSystem=strict,
+capabilities mínimas) — comprometer CENTINEL no da escalada.
+
 ### Caza de C2 moderno (red saliente)
 
 ```bash
@@ -450,6 +463,7 @@ Todo lo que acepta `centinel` (también visible con `--help`):
 |---|---|---|
 | `--user U` · `--no-drop` · `--force-drop` | drop de privilegios tras abrir recursos | `nobody` |
 | `--install-service` · `--uninstall-service` · `--status-service` | servicio systemd | — |
+| `--early-boot` | con `--install-service`: arranque a nivel sysinit, antes que todos los servicios | off |
 | `--allow-overlap` | permitir múltiples instancias | off |
 | `--ack-baseline` | aceptar el estado actual como baseline limpia | — |
 | `--baseline-dir DIR` | baselines firmadas (HMAC) del rootcheck | — |

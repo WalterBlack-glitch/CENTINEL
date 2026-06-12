@@ -376,6 +376,11 @@ def main() -> None:
     p.add_argument("--install-service", action="store_true",
                    help="instala CENTINEL como servicio systemd con arranque "
                         "primario (antes de multi-user.target) y hardening.")
+    p.add_argument("--early-boot", action="store_true",
+                   help="con --install-service: arranque a nivel sysinit, "
+                        "ANTES que todos los servicios normales — un malware "
+                        "persistido como unidad systemd no corre sin que "
+                        "CENTINEL ya esté vigilando.")
     p.add_argument("--uninstall-service", action="store_true",
                    help="desinstala el servicio systemd.")
     p.add_argument("--status-service", action="store_true",
@@ -433,7 +438,7 @@ def main() -> None:
     if args.install_service or args.uninstall_service or args.status_service:
         from .service import install, uninstall, status
         if args.install_service:
-            sys.exit(install())
+            sys.exit(install(early=args.early_boot))
         if args.uninstall_service:
             sys.exit(uninstall())
         sys.exit(status())

@@ -33,16 +33,36 @@ def _python_exe() -> str:
     return os.path.realpath(sys.executable)
 
 
-def _unit_text(args_line: str) -> str:
+def _unit_text(args_line: str, early: bool = False) -> str:
     py = _python_exe()
+    if early:
+        # Early-boot: nivel sysinit. CENTINEL arranca ANTES que cualquier
+        # servicio normal (todos ordenan After=basic.target): un malware
+        # persistido como unidad systemd no llega a ejecutarse sin que el
+        # baseline ya esté vigilando. Con DefaultDependencies=no hay que
+        # declarar a mano las dependencias mínimas (journald + /var montado)
+        # y el apagado limpio (Conflicts/Before shutdown.target).
+        ordering = """After=local-fs.target systemd-journald.socket systemd-sysctl.service
+Before=basic.target
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target"""
+        wanted_by = "sysinit.target"
+        header = ("# Arranque EARLY-BOOT (--early-boot): antes que todos los "
+                  "servicios normales.")
+    else:
+        ordering = """After=local-fs.target sysinit.target network-pre.target
+Before=multi-user.target
+DefaultDependencies=yes"""
+        wanted_by = "multi-user.target"
+        header = ("# Arranque primario: antes de multi-user.target (antes de "
+                  "sesiones de usuario).")
     return f"""# Generado por: python -m centinel --install-service
-# Arranque primario: antes de multi-user.target (antes de sesiones de usuario).
+{header}
 [Unit]
 Description=CENTINEL - rastreo multicapa de amenazas
 Documentation=https://github.com/WalterBlack-glitch/CENTINEL
-After=local-fs.target sysinit.target network-pre.target
-Before=multi-user.target
-DefaultDependencies=yes
+{ordering}
 ConditionPathIsDirectory=/proc
 
 [Service]
@@ -87,20 +107,21 @@ AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
 
 [Install]
-WantedBy=multi-user.target
+WantedBy={wanted_by}
 """
 
 
 def install(args_line: str = "--rootcheck --netwatch --web "
                               "--baseline-dir /var/lib/centinel/baselines "
-                              "--db /var/lib/centinel/centinel.db") -> int:
+                              "--db /var/lib/centinel/centinel.db",
+            early: bool = False) -> int:
     if os.name != "posix" or not os.path.isdir("/etc/systemd/system"):
         print("[centinel] systemd no detectado (¿no es Linux con systemd?).")
         return 1
     if os.geteuid() != 0:
         print("[centinel] --install-service requiere root.")
         return 1
-    unit = _unit_text(args_line)
+    unit = _unit_text(args_line, early=early)
     tmp = SERVICE_PATH + ".tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
     with os.fdopen(fd, "w") as f:
