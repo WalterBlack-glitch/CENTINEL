@@ -1,4 +1,4 @@
-# 🛰 Centinel
+# 🛰 CENTINEL
 
 Rastreo **multicapa** de amenazas en tiempo real para servidores Linux. Va más
 allá de "contar intentos de fuerza bruta": correlaciona varias señales por
@@ -26,16 +26,20 @@ El valor no está en un solo detector, sino en cómo se combinan las capas:
 
 > ⚠️ **Sobre la MAC:** una MAC de origen solo es visible para dispositivos en
 > tu mismo dominio de broadcast (tu LAN). Para tráfico de internet, la MAC que
-> ves es la de tu gateway/router — Centinel lo etiqueta como `scope=wan` y no
+> ves es la de tu gateway/router — CENTINEL lo etiqueta como `scope=wan` y no
 > pretende lo contrario. Es una limitación física de Ethernet/IP, no del tool.
 
 ## Instalación
 
 ```bash
-pip install -e ".[all]"      # rich + scapy
+git clone https://github.com/WalterBlack-glitch/CENTINEL.git
+cd CENTINEL
+pip install -e ".[all]"      # rich + scapy + web + geo (todo)
 # o mínimo:
-pip install -e ".[ui]"       # solo dashboard
+pip install -e ".[ui]"       # solo dashboard en terminal
 ```
+
+Tras instalar tienes el binario `centinel` (y `python -m centinel` equivale).
 
 ## Uso
 
@@ -139,7 +143,7 @@ herede de `Collector`.
 
 ## Seguridad
 
-Centinel procesa **input hostil** (un atacante remoto controla parcialmente
+CENTINEL procesa **input hostil** (un atacante remoto controla parcialmente
 `auth.log` vía su username SSH y el rDNS de su IP). El código está endurecido
 contra ese modelo de amenaza —ver [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) para
 la auditoría completa (13 hallazgos) y sus mitigaciones:
@@ -169,7 +173,7 @@ la auditoría completa (13 hallazgos) y sus mitigaciones:
 
 ## Modo examen y respuesta activa
 
-`--assess` convierte Centinel en un bucle de **examen → corrección**:
+`--assess` convierte CENTINEL en un bucle de **examen → corrección**:
 
 1. **Examen:** monitorea tráfico en vivo durante `--assess-window` segundos.
 2. **Informe:** ranking de actores por score (IP, MAC, fallos, usuarios, puertos).
@@ -217,11 +221,11 @@ activa decide por score + allowlist.
 
 ### Atribución de actor entre IPs (la botnet como un solo adversario)
 
-La defensa más avanzada de Centinel: en vez de razonar "por IP", agrupa IPs
+La defensa más avanzada de CENTINEL: en vez de razonar "por IP", agrupa IPs
 distintas en un mismo **adversario** según su huella de comportamiento —el
 diccionario de usuarios objetivo, las técnicas y el perfil de temporización
 compartidos. Un atacante con IA reparte su campaña entre decenas de IPs para
-diluirse; al reconocer la huella común, Centinel las atribuye a una sola
+diluirse; al reconocer la huella común, CENTINEL las atribuye a una sola
 entidad y te deja defenderte de la campaña entera, no IP por IP.
 
 Cuando ≥5 IPs comparten diccionario/TTPs → `alert_actor_atribuido` y aparecen
@@ -231,7 +235,7 @@ LRU O(1): ~5 µs/evento incluso bajo un atacante que rota diccionarios).
 
 ### Feed CVE de CISA KEV (gratis, sin API key)
 
-Centinel cruza los CVEs detectados contra el catálogo **KEV de CISA** (Known
+CENTINEL cruza los CVEs detectados contra el catálogo **KEV de CISA** (Known
 Exploited Vulnerabilities — la lista oficial de CVEs con explotación confirmada
 en el mundo real). Si un CVE está en KEV, el evento sube a `HIGH` y se etiqueta
 `kev`; si KEV lo marca con uso en ransomware, sube a `CRITICAL` (`ransomware`).
@@ -270,7 +274,7 @@ centinel --honeypot 2222 --assess --respond-live   # captura y bloquea
 ## Defensa contra hacking asistido por IA
 
 Los ataques con IA/LLM rompen la detección clásica yendo **low-and-slow
-distribuidos** (cada IP bajo el umbral) y con temporización adaptativa. Centinel
+distribuidos** (cada IP bajo el umbral) y con temporización adaptativa. CENTINEL
 incorpora detectores que **no dependen de umbrales por-IP** — ver
 [`docs/DEFENSA_IA.md`](docs/DEFENSA_IA.md):
 
@@ -288,7 +292,7 @@ ventana (no son un vector de DoS de memoria). Cubierto por tests.
 
 ## Remediación guiada: te dice cómo arreglarlo
 
-Detectar no basta. Ante un compromiso (o intento), Centinel adjunta a la alerta
+Detectar no basta. Ante un compromiso (o intento), CENTINEL adjunta a la alerta
 un **playbook accionable** — qué comprobar, qué comando ejecutar y cómo cerrar el
 agujero. Aparece en un cajón **🛠️ Cómo remediar** del dashboard web (con botón
 *copiar* por comando) y en un panel propio de la terminal.
@@ -301,7 +305,7 @@ fuente hostil, nunca introduce metacaracteres de shell en un comando copiable.
 
 ### Doctor: diagnóstico y arreglo previo
 
-Antes de arrancar, Centinel revisa las causas habituales de fallo según los
+Antes de arrancar, CENTINEL revisa las causas habituales de fallo según los
 flags pedidos, **arregla lo seguro** (crea el directorio de la BD, endurece
 permisos a 0600) y para el resto imprime el **comando exacto** de arreglo
 (dependencias ausentes, falta de privilegios para sniffer/honeypot, puerto web
@@ -364,7 +368,7 @@ sudo centinel --netwatch --rootcheck --web      # red + host, todo junto
 
 ## Exposición a nivel root (endurecimiento)
 
-Centinel necesita root **solo** para abrir recursos privilegiados (socket de
+CENTINEL necesita root **solo** para abrir recursos privilegiados (socket de
 captura, lectura de logs, bind de honeypot, `nft`/`iptables`) y **suelta
 privilegios** a `nobody` en cuanto los abre. Notas de superficie:
 
