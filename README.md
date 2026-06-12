@@ -74,6 +74,25 @@ Flags principales: `--simulate`, `--sniff`, `--iface`, `--no-authlog`,
 `--authlog-path`, `--oui`, `--db`, `--beacon`, `--execwatch`, `--report`,
 `--verify-log`, `--alert-webhook`, `--digest-webhook`.
 
+### Lanzador Windows → WSL (un clic, dashboard web)
+
+Para probar CENTINEL desde Windows sin tocar terminal, `scripts/centinel-wsl.bat`
+abre una **cmd** estilizada que arranca WSL/Ubuntu, clona el repo en `~/CENTINEL`
+si no está, crea un venv con los extras `[ui,web]` y lanza el dashboard
+HTML en [http://127.0.0.1:8787](http://127.0.0.1:8787) (modo `--simulate`, sin
+root). El navegador se abre solo cuando el WebSocket responde. Para tener un
+acceso directo en el escritorio:
+
+```powershell
+$bat = "$PWD\scripts\centinel-wsl.bat"
+$wsh = New-Object -ComObject WScript.Shell
+$s = $wsh.CreateShortcut("$env:USERPROFILE\Desktop\CENTINEL.lnk")
+$s.TargetPath = "$env:SystemRoot\System32\cmd.exe"
+$s.Arguments  = "/c `"$bat`""
+$s.IconLocation = "$env:SystemRoot\System32\imageres.dll,109"
+$s.Save()
+```
+
 ### Servicio systemd: vigilar desde el arranque
 
 ```bash
