@@ -1,5 +1,11 @@
 # 🛰 CENTINEL
 
+[![CI](https://github.com/WalterBlack-glitch/CENTINEL/actions/workflows/ci.yml/badge.svg)](https://github.com/WalterBlack-glitch/CENTINEL/actions/workflows/ci.yml)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+![Licencia MIT](https://img.shields.io/badge/licencia-MIT-green)
+[![Versión 0.2.0](https://img.shields.io/badge/versi%C3%B3n-0.2.0-orange)](CHANGELOG.md)
+![Deps obligatorias: 0](https://img.shields.io/badge/deps_obligatorias-0-success)
+
 Rastreo **multicapa** de amenazas en tiempo real para servidores Linux. Va más
 allá de "contar intentos de fuerza bruta": correlaciona varias señales por
 actor y muestra **de dónde proviene** cada amenaza con IP, MAC (cuando es
@@ -194,11 +200,15 @@ Salvaguardas de la respuesta activa (capa `response/`):
 
 ## Roadmap
 
-- [x] Capa de presentación web (FastAPI + WebSocket) con mapa geo
-- [ ] Hook de threat-intel (AbuseIPDB / listas) opcional
-- [x] Respuesta activa: auto-`iptables`/`nft` drop sobre score crítico
-- [x] journald estructurado (elimina el spoofing de logs de raíz)
-- [ ] Exportador para Prometheus/Grafana
+Plan completo por versiones en [docs/ROADMAP.md](docs/ROADMAP.md). Resumen:
+
+- **v0.3** — auditd/execve vía netlink (cierra la ventana ciega del polling de
+  exec), inotify en rutas de persistencia, línea de tiempo de incidente.
+- **v0.4** — export a SIEM (JSON-lines / syslog / CEF), reglas externas
+  cargables en caliente, escaneo YARA opcional.
+- **v0.5** — estado de correlación persistente, modo agente→colector central
+  con mTLS, métricas Prometheus.
+- **v1.0** — CLI congelada, paquetes `.deb`/`.rpm`/OCI, releases firmadas + SBOM.
 
 ## Detección de exploits y CVEs (Metasploit / escáneres)
 
@@ -380,7 +390,73 @@ privilegios** a `nobody` en cuanto los abre. Notas de superficie:
 - **`--respond-live`** (bloqueo real con `nft`) necesita root sostenido, así que
   requiere `--no-drop`; el `doctor` avisa del conflicto.
 
-## Tests
+## Referencia de flags (CLI)
+
+Todo lo que acepta `centinel` (también visible con `--help`):
+
+**Fuentes / colectores**
+
+| Flag | Qué hace | Default |
+|---|---|---|
+| `--simulate` | ataques sintéticos (demo sin root ni Linux) | off |
+| `--sniff` · `--iface IF` | captura de paquetes (root + scapy) | off |
+| `--no-authlog` · `--authlog` · `--authlog-path RUTA` | control del colector de autenticación (journald por defecto; `--authlog` fuerza fichero) | journald |
+| `--honeypot P1,P2` · `--honeypot-host H` | puertos-trampa | off · `0.0.0.0` |
+| `--netwatch` · `--netwatch-interval S` | procesos↔IP vía `/proc` | off · 10 s |
+| `--dnswatch` | exfiltración por DNS (T1048.003) | off |
+| `--beacon` · `--beacon-interval S` | beaconing C2 (T1071) | off · 5 s |
+| `--execwatch` · `--execwatch-interval S` | exec sospechoso / reverse shells (T1059) | off · 2 s |
+| `--rootcheck` · `--rootcheck-interval S` | persistencia / rootkits | off · 60 s |
+
+**Enriquecimiento e inteligencia**
+
+| Flag | Qué hace | Default |
+|---|---|---|
+| `--rdns` | DNS inverso en background | off |
+| `--oui CSV` | fabricante por MAC (prefijo OUI) | — |
+| `--geo MMDB` | geolocalización con GeoLite2-City | — |
+| `--kev-cache RUTA` · `--kev-update` | feed KEV de CISA (offline-first) | — |
+| `--canary u1,u2` | usuarios-cebo → CRITICAL inmediato | — |
+
+**Presentación**
+
+| Flag | Qué hace | Default |
+|---|---|---|
+| `--web` · `--web-host H` · `--web-port P` | dashboard web (WebSocket + mapa) | off · `127.0.0.1` · 8787 |
+| `--web-token TOK` | Bearer obligatorio para el dashboard | — |
+
+**Respuesta y alertas**
+
+| Flag | Qué hace | Default |
+|---|---|---|
+| `--assess` · `--assess-window S` | modo examen → corrección en bucle | off · 15 s |
+| `--block-threshold N` | score a partir del cual se bloquea | 70 |
+| `--respond-live` | bloqueo REAL en firewall (sin él: dry-run) | off |
+| `--allow IP/CIDR` | nunca bloquear (repetible) | — |
+| `--alert-webhook URL` · `--alert-min-sev N` | webhook por alerta | — · 3 (HIGH) |
+| `--digest-webhook URL` · `--digest-interval-h H` | resumen periódico al webhook | — · 24 h |
+
+**Forense**
+
+| Flag | Qué hace | Default |
+|---|---|---|
+| `--db RUTA` | event store SQLite (tamper-evident) | `centinel.db` |
+| `--report` | informe forense y salir | — |
+| `--verify-log` | verifica la cadena HMAC (exit 0=intacta, 2=manipulada) | — |
+
+**Operación**
+
+| Flag | Qué hace | Default |
+|---|---|---|
+| `--user U` · `--no-drop` · `--force-drop` | drop de privilegios tras abrir recursos | `nobody` |
+| `--install-service` · `--uninstall-service` · `--status-service` | servicio systemd | — |
+| `--allow-overlap` | permitir múltiples instancias | off |
+| `--ack-baseline` | aceptar el estado actual como baseline limpia | — |
+| `--baseline-dir DIR` | baselines firmadas (HMAC) del rootcheck | — |
+| `--maintenance-grace S` · `--maintenance-off` | gracia tras arranque / modo paranoico | 90 s |
+| `--doctor` · `--no-doctor` | diagnóstico previo (solo / omitir) | on |
+
+## Tests y CI
 
 Suite de regresión centrada en las defensas de seguridad (anti-spoofing,
 procedencia journald, salvaguardas del firewall, anti-DoS de la correlación):
@@ -389,6 +465,22 @@ procedencia journald, salvaguardas del firewall, anti-DoS de la correlación):
 pip install -e ".[test]"
 pytest -q
 ```
+
+Cada push y PR corre la suite en GitHub Actions sobre Python 3.10–3.13, dos
+veces: sin ningún extra (verifica las 0 dependencias obligatorias) y con
+`[all]` instalado (verifica las ramas con rich/scapy/fastapi).
+
+## Documentación
+
+| Documento | Contenido |
+|---|---|
+| [CHANGELOG.md](CHANGELOG.md) | Historial de cambios por versión (SemVer) |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Plan de versiones v0.3 → v1.0 |
+| [docs/AUDIT.md](docs/AUDIT.md) | Auditoría técnica: fortalezas, deuda y prioridades |
+| [docs/DEFENSA_IA.md](docs/DEFENSA_IA.md) | Defensa contra hacking asistido por IA |
+| [SECURITY_AUDIT.md](SECURITY_AUDIT.md) | Auditoría de seguridad del propio código (13 hallazgos) |
+| [AUDIT_HONEYPOT.md](AUDIT_HONEYPOT.md) | Endurecimiento del honeypot |
+| [AUDIT_AI_DEFENSE.md](AUDIT_AI_DEFENSE.md) | Revisión de la capa anti-IA |
 
 ## Licencia
 

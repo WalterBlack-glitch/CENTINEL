@@ -2,6 +2,14 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Sin publicar]
+
+### Añadido
+- **CI en GitHub Actions**: matriz Python 3.10–3.13 sin extras (verifica las
+  0 dependencias obligatorias) + job con `[all]` instalado.
+- README: referencia completa de flags, índice de documentación, badges y
+  roadmap sincronizado con `docs/ROADMAP.md`.
+
 ## [0.2.0] — 2026-06-06
 
 ### Añadido
