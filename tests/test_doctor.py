@@ -45,9 +45,12 @@ def test_endurece_permisos_de_bd_existente(tmp_path):
     assert (os.stat(db).st_mode & 0o077) == 0
 
 
-def test_puerto_ocupado_se_auto_arregla(tmp_path):
+def test_puerto_ocupado_se_auto_arregla(monkeypatch, tmp_path):
     import socket
+    import centinel.doctor as d
     from centinel.doctor import FIX
+    # Aísla del entorno: aquí se prueba la reubicación de puerto, no las deps.
+    monkeypatch.setattr(d, "_has", lambda m: True)
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
