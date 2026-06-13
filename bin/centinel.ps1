@@ -1,4 +1,4 @@
-$Host.UI.RawUI.WindowTitle = 'Centinel'
+﻿$Host.UI.RawUI.WindowTitle = 'Centinel'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 try { [Console]::CursorVisible = $false } catch {}
 
