@@ -74,6 +74,26 @@ Flags principales: `--simulate`, `--sniff`, `--iface`, `--no-authlog`,
 `--authlog-path`, `--oui`, `--db`, `--beacon`, `--execwatch`, `--report`,
 `--verify-log`, `--alert-webhook`, `--digest-webhook`.
 
+### Cheatsheet rápida (dentro de WSL)
+
+```bash
+centinel --simulate                          # demo sin root
+centinel --simulate --web                    # dashboard HTML 127.0.0.1:8787
+centinel --simulate --assess                 # modo examen dry-run
+sudo centinel --sniff --iface eth0           # captura real de paquetes
+sudo centinel --beacon                       # C2 beaconing (T1071)
+sudo centinel --execwatch                    # reverse shells / fileless (T1059)
+sudo centinel --netwatch                     # procesos ↔ IP via /proc
+sudo centinel --dnswatch --iface eth0        # exfil por DNS (T1048.003)
+sudo centinel --rootcheck                    # persistencia / rootkits
+sudo centinel --honeypot 2222                # puerto-trampa SSH
+centinel --report --db centinel.db           # informe forense del log
+centinel --verify-log --db centinel.db       # verifica cadena tamper-evident
+centinel --kev-update --kev-cache kev.json   # feed CISA KEV (offline)
+centinel --doctor                            # diagnóstico previo
+sudo centinel --install-service --early-boot # autostart nivel sysinit
+```
+
 ### Lanzador Windows → WSL (un clic, dashboard web)
 
 Doble clic en `bin/centinel.cmd` (o crea un acceso directo `Centinel.lnk` con
