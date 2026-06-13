@@ -137,7 +137,7 @@ if ($LASTEXITCODE -ne 0) {
     Read-Host '    Enter para salir'; exit 1
 }
 
-# 2) Bootstrap dentro de WSL (sin extras web — dashboard solo en terminal).
+# 2) Bootstrap idempotente (clona repo + venv una sola vez).
 $boot = @'
 set -e
 cd ~
@@ -152,39 +152,66 @@ if [ ! -d .venv ]; then
   .venv/bin/pip install -q -U pip
   .venv/bin/pip install -q -e '.[ui]'
 fi
-echo
-exec .venv/bin/python -m centinel --simulate
+echo '[boot] listo.'
 '@
-
+Write-Host "    $GRN>>$R preparando WSL..."
+wsl.exe -d Ubuntu -- bash -lc $boot | Out-Host
 Write-Host ''
-Write-Host "    $SLV$B  COMANDOS  $R$DIM (dentro de WSL, tras este arranque)$R"
-Write-Host "    $DIM ─────────────────────────────────────────────────────────$R"
-$cmds = @(
-  @('centinel --simulate',                       'demo sin root (lo que corre ahora)'),
-  @('centinel --simulate --web',                 'dashboard HTML 127.0.0.1:8787'),
-  @('centinel --simulate --assess',              'modo examen dry-run'),
-  @('sudo centinel --sniff --iface eth0',        'captura real de paquetes'),
-  @('sudo centinel --beacon',                    'C2 beaconing (T1071)'),
-  @('sudo centinel --execwatch',                 'reverse shells / fileless (T1059)'),
-  @('sudo centinel --netwatch',                  'procesos ↔ IP via /proc'),
-  @('sudo centinel --dnswatch --iface eth0',     'exfil por DNS (T1048.003)'),
-  @('sudo centinel --rootcheck',                 'persistencia / rootkits'),
-  @('sudo centinel --honeypot 2222',             'puerto-trampa SSH'),
-  @('centinel --report --db centinel.db',        'informe forense del log'),
-  @('centinel --verify-log --db centinel.db',    'verifica cadena tamper-evident'),
-  @('centinel --kev-update --kev-cache kev.json','feed CISA KEV (offline)'),
-  @('centinel --doctor',                         'diagnóstico previo'),
-  @('sudo centinel --install-service --early-boot','autostart nivel sysinit')
-)
-foreach ($c in $cmds) {
-    $cmd = $c[0].PadRight(48)
-    Write-Host "     $GLD$cmd$R $DIM$($c[1])$R"
+
+# 3) Lanza un panel en una ventana cmd separada.
+function Start-Panel($title, $color, $flags) {
+    $args_b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($flags))
+    $bash = "cd ~/CENTINEL && flags=`$(echo $args_b64 | base64 -d) && echo && echo `"  >> centinel $flags`" && echo && .venv/bin/python -m centinel `$flags ; echo ; echo '[panel detenido — Enter para cerrar]' ; read"
+    $wslCmd = "wsl.exe -d Ubuntu -- bash -lc `"$bash`""
+    Start-Process cmd.exe -ArgumentList @('/c', "title Centinel - $title && color $color && $wslCmd")
 }
-Write-Host ''
-Write-Host "    $GRN>>$R arrancando demo $DIM(Ctrl+C para detener)$R"
-Write-Host ''
-wsl.exe -d Ubuntu -- bash -lc $boot
 
-Write-Host ''
-Write-Host "    $DIM Centinel detenido. $R"
-Read-Host '    Enter para cerrar'
+# 4) Menú persistente.
+$opts = @(
+  @{ key='1'; name='Red (sniff + netwatch)';        color='0B'; flags='--simulate' },
+  @{ key='2'; name='C2 beaconing (T1071)';          color='0C'; flags='--simulate --beacon' },
+  @{ key='3'; name='Exec / reverse shells (T1059)'; color='0E'; flags='--simulate --execwatch' },
+  @{ key='4'; name='DNS exfil (T1048.003)';         color='0D'; flags='--simulate --dnswatch' },
+  @{ key='5'; name='Persistencia / rootkits';       color='0A'; flags='--simulate --rootcheck' },
+  @{ key='6'; name='Honeypot 2222';                 color='09'; flags='--simulate --honeypot 2222' },
+  @{ key='7'; name='Forense (informe + cadena)';    color='07'; flags='--report --verify-log' },
+  @{ key='A'; name='AUTO-DEFENSA (todas las capas)';color='4F'; flags='--simulate --beacon --execwatch --dnswatch --rootcheck --assess --block-threshold 70' }
+)
+
+function Show-Menu {
+    Clear-Host
+    Write-Host ''
+    Write-Host "    $RED$B  ┌─────────────────────────────────────────────────────────┐$R"
+    Write-Host "    $RED$B  │$R   $GLD$B C E N T I N E L $R  $DIM·  panel de control$R              $RED$B│$R"
+    Write-Host "    $RED$B  └─────────────────────────────────────────────────────────┘$R"
+    Write-Host ''
+    foreach ($o in $opts) {
+        $key = $o.key.PadLeft(2)
+        $name = $o.name.PadRight(38)
+        if ($o.key -eq 'A') {
+            Write-Host "      $RED$B[ $key ]$R  $RED$B$name$R $DIM— modo automatizado$R"
+        } else {
+            Write-Host "      $CYN[ $key ]$R  $name $DIM"
+        }
+    }
+    Write-Host ''
+    Write-Host "      $DIM[ Q ]$R  salir"
+    Write-Host ''
+    Write-Host "    $DIM   Cada selección abre una ventana propia. El menú persiste.$R"
+    Write-Host ''
+}
+
+while ($true) {
+    Show-Menu
+    $sel = (Read-Host "    > opción").Trim().ToUpper()
+    if ($sel -eq 'Q' -or $sel -eq '') { break }
+    $opt = $opts | Where-Object { $_.key -eq $sel } | Select-Object -First 1
+    if (-not $opt) {
+        Write-Host "    $RED>>$R opción no válida"; Start-Sleep 1; continue
+    }
+    Start-Panel $opt.name $opt.color $opt.flags
+    Start-Sleep -Milliseconds 400
+}
+
+try { [Console]::CursorVisible = $true } catch {}
+Write-Host "    $DIM Centinel cerrado. $R"
