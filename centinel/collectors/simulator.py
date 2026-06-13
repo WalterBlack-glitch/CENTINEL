@@ -59,12 +59,25 @@ class SimulatorCollector(Collector):
                     user=random.choice(_USERS), severity=Severity.MEDIUM,
                     message="Usuario inexistente (sim)", tags={"auth", "recon"},
                 )
-            elif roll < 0.95:
+            elif roll < 0.88:
                 ev = ThreatEvent(
                     kind="tcp_syn", src_ip=ip, dst_port=random.randint(1, 9000),
                     mac=random.choice(_MACS) if ip.startswith("192.168") else None,
                     severity=Severity.INFO, message="SYN (sim)", tags={"l3"},
                 )
+            elif roll < 0.93:
+                # Hijack sintético: LD_PRELOAD apuntando a /tmp.
+                ev = ThreatEvent(
+                    kind="hijack_preload", severity=Severity.CRITICAL,
+                    message=f"LD_PRELOAD desde directorio efímero: "
+                            f"/tmp/.rk_{random.randint(1000, 9999)}.so (sim)",
+                    tags={"hijack", "ld_preload", "T1574.006"})
+            elif roll < 0.95:
+                ev = ThreatEvent(
+                    kind="hijack_ptrace", severity=Severity.HIGH,
+                    message=f"ptrace activo: '{random.choice(['python3','curl','nc'])}'"
+                            f" rastrea 'sshd' (sim)",
+                    tags={"hijack", "ptrace", "T1055.008"})
             else:
                 ev = ThreatEvent(
                     kind="login_success", src_ip=ip, user="admin",

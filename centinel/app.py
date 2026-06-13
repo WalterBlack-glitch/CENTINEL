@@ -25,6 +25,7 @@ from .collectors.persistence import PersistenceCollector
 from .collectors.dnswatch import DNSWatchCollector
 from .collectors.beacon import BeaconCollector
 from .collectors.execwatch import ExecWatchCollector
+from .collectors.hijackwatch import HijackWatch
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -107,6 +108,9 @@ class Centinel:
         if args.execwatch:
             self.collectors.append(
                 ExecWatchCollector(self.bus, interval=args.execwatch_interval))
+        if args.hijackwatch:
+            self.collectors.append(
+                HijackWatch(self.bus, interval=args.hijackwatch_interval))
         if args.rootcheck:
             from .maintenance import MaintenanceContext
             maint = None if args.maintenance_off else MaintenanceContext(
@@ -322,6 +326,11 @@ def main() -> None:
                         "Vigila /proc; root = visión total de procesos.")
     p.add_argument("--execwatch-interval", type=float, default=2.0,
                    help="segundos entre barridos de procesos del execwatch")
+    p.add_argument("--hijackwatch", action="store_true",
+                   help="anti-hijacking: detecta LD_PRELOAD/PATH hijack, "
+                        "ptrace ajeno y auto-defensa de centinel (T1574/T1055).")
+    p.add_argument("--hijackwatch-interval", type=float, default=3.0,
+                   help="segundos entre barridos del anti-hijacking")
     p.add_argument("--rootcheck", action="store_true",
                    help="vigilar persistencia: SUID/SGID nuevos o en sitios raros "
                         "y cron/systemd con patrones de backdoor")

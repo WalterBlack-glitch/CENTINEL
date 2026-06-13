@@ -5,6 +5,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Sin publicar]
 
 ### Añadido
+- **Anti-hijacking** (`--hijackwatch`, MITRE T1574/T1055): nuevo colector que
+  caza inyección de librería (`LD_PRELOAD` desde `/tmp`/`/dev/shm`/`$HOME`/
+  rutas world-writable), secuestro de `PATH` (efímero o `$HOME` antepuesto a
+  `/usr/bin`) y ptrace activo sobre procesos ajenos. Self-defense: detecta
+  cuando alguien adjunta un tracer al propio centinel (CRITICAL).
 - **Arranque early-boot** (`--install-service --early-boot`): la unidad systemd
   se instala a nivel `sysinit` (`Before=basic.target`), de modo que CENTINEL
   arranca **antes que cualquier servicio normal** — un malware persistido como
