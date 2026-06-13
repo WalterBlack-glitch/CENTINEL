@@ -76,21 +76,17 @@ Flags principales: `--simulate`, `--sniff`, `--iface`, `--no-authlog`,
 
 ### Lanzador Windows → WSL (un clic, dashboard web)
 
-Para probar CENTINEL desde Windows sin tocar terminal, `scripts/centinel-wsl.bat`
-abre una **cmd** estilizada que arranca WSL/Ubuntu, clona el repo en `~/CENTINEL`
-si no está, crea un venv con los extras `[ui,web]` y lanza el dashboard
-HTML en [http://127.0.0.1:8787](http://127.0.0.1:8787) (modo `--simulate`, sin
-root). El navegador se abre solo cuando el WebSocket responde. Para tener un
-acceso directo en el escritorio:
+Doble clic en `bin/centinel.cmd` (o crea un acceso directo `Centinel.lnk` con
+`bin/centinel.ico` como icono): banner estilo Sentinel, arranca WSL/Ubuntu,
+clona el repo y crea el venv con extras `[ui,web]` la primera vez, lanza el
+dashboard HTML en [http://127.0.0.1:8787](http://127.0.0.1:8787) (`--simulate`,
+sin root) y abre el navegador cuando responde.
 
 ```powershell
-$bat = "$PWD\scripts\centinel-wsl.bat"
+$cmd = "$PWD\bin\centinel.cmd"; $ico = "$PWD\bin\centinel.ico"
 $wsh = New-Object -ComObject WScript.Shell
-$s = $wsh.CreateShortcut("$env:USERPROFILE\Desktop\CENTINEL.lnk")
-$s.TargetPath = "$env:SystemRoot\System32\cmd.exe"
-$s.Arguments  = "/c `"$bat`""
-$s.IconLocation = "$env:SystemRoot\System32\imageres.dll,109"
-$s.Save()
+$s = $wsh.CreateShortcut("$env:USERPROFILE\Desktop\Centinel.lnk")
+$s.TargetPath = $cmd; $s.IconLocation = "$ico,0"; $s.Save()
 ```
 
 ### Servicio systemd: vigilar desde el arranque
