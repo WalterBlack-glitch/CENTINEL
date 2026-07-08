@@ -26,6 +26,7 @@ from .collectors.dnswatch import DNSWatchCollector
 from .collectors.beacon import BeaconCollector
 from .collectors.execwatch import ExecWatchCollector
 from .collectors.hijackwatch import HijackWatch
+from .collectors.edgewatch import EdgeWatch
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -111,6 +112,9 @@ class Centinel:
         if args.hijackwatch:
             self.collectors.append(
                 HijackWatch(self.bus, interval=args.hijackwatch_interval))
+        if args.edgewatch:
+            self.collectors.append(
+                EdgeWatch(self.bus, interval=args.edgewatch_interval))
         if args.rootcheck:
             from .maintenance import MaintenanceContext
             maint = None if args.maintenance_off else MaintenanceContext(
@@ -331,6 +335,13 @@ def main() -> None:
                         "ptrace ajeno y auto-defensa de centinel (T1574/T1055).")
     p.add_argument("--hijackwatch-interval", type=float, default=3.0,
                    help="segundos entre barridos del anti-hijacking")
+    p.add_argument("--edgewatch", action="store_true",
+                   help="anti-malware 'edge': hijack de Microsoft Edge "
+                        "(search/homepage/extensiones), tamper de /boot, "
+                        "módulos kernel nuevos y ejecución fileless/LOLBins "
+                        "(T1176/T1542/T1014/T1620/T1059).")
+    p.add_argument("--edgewatch-interval", type=float, default=30.0,
+                   help="segundos entre barridos del edgewatch")
     p.add_argument("--rootcheck", action="store_true",
                    help="vigilar persistencia: SUID/SGID nuevos o en sitios raros "
                         "y cron/systemd con patrones de backdoor")

@@ -176,7 +176,8 @@ $opts = @(
   @{ key='6'; name='Honeypot 2222';                 color='09'; flags='--simulate --honeypot 2222' },
   @{ key='7'; name='Forense (informe + cadena)';    color='07'; flags='--report --verify-log' },
   @{ key='8'; name='Anti-hijacking (LD_PRELOAD/PATH/ptrace)'; color='05'; flags='--simulate --hijackwatch' },
-  @{ key='A'; name='AUTO-DEFENSA (todas las capas)';color='4F'; flags='--simulate --beacon --execwatch --dnswatch --rootcheck --hijackwatch --assess --block-threshold 70' }
+  @{ key='9'; name='Edge (browser/boot/kernel/fileless)'; color='0B'; flags='--simulate --edgewatch' },
+  @{ key='A'; name='AUTO-DEFENSA (todas las capas)';color='4F'; flags='--simulate --beacon --execwatch --dnswatch --rootcheck --hijackwatch --edgewatch --assess --block-threshold 70' }
 )
 
 function Show-Menu {
