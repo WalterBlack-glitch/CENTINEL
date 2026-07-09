@@ -5,6 +5,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Sin publicar]
 
 ### Añadido
+- **Watchdog anti-kill** (`--watchdog`, `--install-watchdog`, MITRE T1562.001):
+  servicio hermano `centinel-watchdog.service` (`Restart=always`) que vigila al
+  principal y lo **revive** si un atacante con root lo mata, deshabilita o
+  enmascara (`systemctl stop/disable/mask`). Cada intervención se reporta como
+  CRITICAL por journald. Lógica de decisión pura + 6 tests. Cierra el agujero
+  de "matar el agente" que `Restart=on-failure` no cubría (parada limpia/mask).
 - **EdgeWatch** (`--edgewatch`, MITRE T1176/T1542.003/T1014/T1620/T1059):
   colector "anti edge malware" en 4 frentes — hijack de Microsoft Edge
   (search provider/homepage/startup URLs forzados, extensiones sideloaded o

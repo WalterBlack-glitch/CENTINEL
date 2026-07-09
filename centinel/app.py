@@ -393,6 +393,17 @@ def main() -> None:
                         "evento individual cruza el umbral de alerta.")
     p.add_argument("--digest-interval-h", type=float, default=24.0,
                    help="cada cuántas horas enviar el digest (por defecto 24).")
+    p.add_argument("--watchdog", action="store_true",
+                   help="modo watchdog: vigila el servicio principal y lo "
+                        "revive si lo matan/deshabilitan/enmascaran (T1562.001). "
+                        "Normalmente lo lanza centinel-watchdog.service.")
+    p.add_argument("--watchdog-interval", type=float, default=5.0,
+                   help="segundos entre comprobaciones del watchdog")
+    p.add_argument("--install-watchdog", action="store_true",
+                   help="instala el servicio hermano centinel-watchdog.service "
+                        "(anti-kill: revive CENTINEL si lo sabotean).")
+    p.add_argument("--uninstall-watchdog", action="store_true",
+                   help="desinstala el servicio watchdog.")
     p.add_argument("--install-service", action="store_true",
                    help="instala CENTINEL como servicio systemd con arranque "
                         "primario (antes de multi-user.target) y hardening.")
@@ -454,6 +465,19 @@ def main() -> None:
         ok, text = verify_log(safe_path(args.db))
         print(text)
         sys.exit(0 if ok else 2)
+
+    if args.watchdog:
+        from .watchdog import run as watchdog_run
+        try:
+            sys.exit(watchdog_run(interval=args.watchdog_interval))
+        except KeyboardInterrupt:
+            sys.exit(0)
+
+    if args.install_watchdog or args.uninstall_watchdog:
+        from .watchdog import install_watchdog, uninstall_watchdog
+        if args.install_watchdog:
+            sys.exit(install_watchdog(interval=args.watchdog_interval))
+        sys.exit(uninstall_watchdog())
 
     if args.install_service or args.uninstall_service or args.status_service:
         from .service import install, uninstall, status

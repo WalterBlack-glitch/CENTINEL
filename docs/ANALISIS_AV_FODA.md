@@ -87,7 +87,7 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 - **Solo Linux** (Windows vía WSL, no protege Windows nativo).
 - **Sin rollback** — detecta y bloquea, pero no deshace el daño (cifrado ransomware, ficheros borrados).
 - **Un solo host** — sin correlación entre máquinas ni consola central.
-- **Auto-protección débil** — detecta ptrace a sí mismo, pero un root puede matar el proceso (`SIGKILL`) sin que haya un watchdog que lo reviva.
+- ~~**Auto-protección débil**~~ — CERRADO: el watchdog (`--install-watchdog`) revive CENTINEL si lo matan/deshabilitan/enmascaran y alerta CRITICAL.
 - **Polling, no hooks en kernel** — hay una ventana entre el escaneo y el evento; un proceso efímero puede aparecer y morir entre barridos.
 - **Reputación limitada** — solo KEV de CISA; sin feeds de IP/dominio/hash maliciosos en vivo.
 
@@ -114,7 +114,7 @@ Ordenado por relación **impacto / esfuerzo**. No hace falta hacerlo todo:
 las 3 primeras cierran las debilidades más caras.
 
 ### 🥇 Alto impacto, esfuerzo medio
-1. **Watchdog + auto-resurrección** — unidad systemd hermana que revive CENTINEL si lo matan, y alerta CRITICAL al hacerlo. Cierra "kill del agente". *(la más barata de las grandes)*
+1. ✅ **Watchdog + auto-resurrección** — HECHO (`--watchdog`/`--install-watchdog`). Unidad systemd hermana `Restart=always` que revive CENTINEL si lo matan, deshabilitan o enmascaran, y alerta CRITICAL al hacerlo (T1562.001). Cierra "kill del agente".
 2. **YARA opcional** (`--yara <reglas>`) — escaneo de ficheros en directorios efímeros (`/tmp`, `/dev/shm`, uploads) y de la memoria de procesos sospechosos. Cierra "sin firmas" sin engordar el core.
 3. **Threat intel en vivo** — colector que descarga y cachea Feodo/URLhaus/ThreatFox (como ya se hace con KEV) y enriquece cada IP/dominio. Cierra "reputación limitada".
 
