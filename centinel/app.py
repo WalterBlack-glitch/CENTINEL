@@ -55,8 +55,10 @@ class Centinel:
         geo = GeoResolver(safe_path(args.geo, must_exist=True)) \
             if args.geo else None
         self.kev = self._setup_kev(args)
+        self.blocklist = self._setup_intel(args)
         self.enricher = Enricher(oui_db=_load_oui(oui),
-                                 resolve_rdns=args.rdns, geo=geo, kev=self.kev)
+                                 resolve_rdns=args.rdns, geo=geo, kev=self.kev,
+                                 blocklist=self.blocklist)
         canary = {u.strip() for u in (args.canary or "").split(",") if u.strip()}
         self.engine = CorrelationEngine(self.bus, canary_users=canary)
         self.store = EventStore(safe_path(args.db))
@@ -129,6 +131,24 @@ class Centinel:
                                      interval=args.rootcheck_interval,
                                      store_dir=args.baseline_dir,
                                      maintenance=maint))
+
+    def _setup_intel(self, args):
+        if not (args.intel_cache or args.intel_update or args.intel_feed):
+            return None
+        from .intel.blocklist import BlockList
+        cache = args.intel_cache or "intel_blocklist.json"
+        bl = BlockList(cache)
+        if args.intel_feed:
+            n = bl.load_plaintext(args.intel_feed, source="feed")
+            print(f"[centinel] intel: {n} IPs cargadas de {args.intel_feed}")
+        if args.intel_update:
+            ok, detail = bl.update()   # descarga al arranque (fuera del hot-path)
+            print(f"[centinel] {detail}")
+        if bl.available:
+            print(f"[centinel] threat intel activo: {bl.count} IPs C2/botnet")
+        else:
+            print("[centinel] intel sin datos (usa --intel-update para descargar)")
+        return bl
 
     def _setup_kev(self, args):
         if not (args.kev_cache or args.kev_update):
@@ -376,6 +396,15 @@ def main() -> None:
                    help="ruta de la caché del feed KEV de CISA (offline)")
     p.add_argument("--kev-update", action="store_true",
                    help="descargar/actualizar el feed KEV de CISA al arrancar")
+    p.add_argument("--intel-cache", default=None,
+                   help="caché de la blocklist de IPs C2/botnet (threat intel). "
+                        "Enriquece cada evento: IP en feed conocido -> HIGH.")
+    p.add_argument("--intel-update", action="store_true",
+                   help="descargar feeds de threat intel (abuse.ch Feodo/SSLBL) "
+                        "al arrancar y refrescar la caché.")
+    p.add_argument("--intel-feed", default=None,
+                   help="ruta a una blocklist de texto plano propia (una IP por "
+                        "línea, '#'=comentario) para cargar además de los feeds.")
     p.add_argument("--assess", action="store_true",
                    help="modo examen: monitorea, prioriza, corrige y sigue")
     p.add_argument("--assess-window", type=float, default=15.0,

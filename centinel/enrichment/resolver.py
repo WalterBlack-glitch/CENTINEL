@@ -51,9 +51,11 @@ _ARP_BIN = _resolve_bin("arp")
 
 class Enricher:
     def __init__(self, oui_db: dict[str, str] | None = None,
-                 resolve_rdns: bool = False, geo=None, kev=None) -> None:
+                 resolve_rdns: bool = False, geo=None, kev=None,
+                 blocklist=None) -> None:
         self._geo = geo  # GeoResolver opcional
         self._kev = kev  # KevCatalog opcional
+        self._blocklist = blocklist  # BlockList opcional (threat intel)
         self._arp_cache: dict[str, str] = {}
         self._arp_ts = 0.0
         # cache LRU con TTL: ip -> (nombre|None, ts)
@@ -66,6 +68,13 @@ class Enricher:
     async def enrich(self, ev: ThreatEvent) -> ThreatEvent:
         if ev.src_ip:
             self._classify_ip(ev)
+            # Threat intel: IP en feed de C2/botnet conocido -> alerta fuerte.
+            if self._blocklist is not None and self._blocklist.contains(ev.src_ip):
+                src = self._blocklist.source_of(ev.src_ip) or "?"
+                ev.enrichment["intel"] = src
+                ev.tags.add("threat-intel")
+                ev.tags.add("c2")
+                ev.severity = max(ev.severity, Severity.HIGH)
             if not ev.mac:
                 ev.mac = self._arp_lookup(ev.src_ip)
             if self.resolve_rdns:

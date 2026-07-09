@@ -5,6 +5,13 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Sin publicar]
 
 ### Añadido
+- **Threat intel en vivo** (`--intel-update`, `--intel-cache`, `--intel-feed`):
+  blocklist de IPs C2/botnet desde feeds gratuitos (abuse.ch Feodo/SSLBL),
+  offline-first y endurecida como el KEV. El Enricher marca cualquier evento
+  cuya `src_ip` esté en la lista (`threat-intel`/`c2`, sube a HIGH). Acepta
+  blocklists de texto plano propias con `--intel-feed`. `parse_ip_feed` puro
+  + 11 tests. Feeds solo desde hosts en allowlist, TLS verificado, cota de
+  tamaño, caché 0600.
 - **YaraWatch** (`--yara`, `--yara-rules`, extra `[yara]`): escaneo de firmas
   YARA sobre ficheros en directorios efímeros (`/tmp`, `/dev/shm`, `/var/tmp`,
   `/run/shm`) — cierra el hueco "sin firmas" sin tocar el core (dependencia

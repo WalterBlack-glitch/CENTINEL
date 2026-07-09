@@ -60,7 +60,7 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 | Rollback / deshacer daño | ❌ | ⚠️ | ✅ | ❌ | ❌ |
 | ML en endpoint | ❌ | ✅ | ✅ | ❌ | ⚠️ |
 | Correlación cross-host / SIEM | ❌ | ✅ | ✅ | ❌ | ✅ |
-| Cloud reputation (hash/IP/dominio) | ⚠️ KEV | ✅ | ✅ | ✅ | ⚠️ |
+| Cloud reputation (hash/IP/dominio) | ⚠️ KEV+intel IP | ✅ | ✅ | ✅ | ⚠️ |
 | Auto-protección del agente | ⚠️ | ✅ | ✅ | ❌ | ⚠️ |
 | Coste | €0 | €0 | €€€ | €0 | €0 |
 | Peso / footprint | Muy ligero | Medio | Ligero | Ligero | Pesado |
@@ -89,7 +89,7 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 - **Un solo host** — sin correlación entre máquinas ni consola central.
 - ~~**Auto-protección débil**~~ — CERRADO: el watchdog (`--install-watchdog`) revive CENTINEL si lo matan/deshabilitan/enmascaran y alerta CRITICAL.
 - **Polling, no hooks en kernel** — hay una ventana entre el escaneo y el evento; un proceso efímero puede aparecer y morir entre barridos.
-- **Reputación limitada** — solo KEV de CISA; sin feeds de IP/dominio/hash maliciosos en vivo.
+- ~~**Reputación limitada**~~ — MITIGADO: `--intel-update` añade feeds de IPs C2/botnet (abuse.ch). Falta cobertura de dominios y hashes.
 
 ### 🚪 Oportunidades
 - **Nicho open-source de comportamiento para Linux** — ClamAV es solo firmas, Wazuh es pesado. Hay hueco para algo ligero, moderno y auditable.
@@ -116,7 +116,7 @@ las 3 primeras cierran las debilidades más caras.
 ### 🥇 Alto impacto, esfuerzo medio
 1. ✅ **Watchdog + auto-resurrección** — HECHO (`--watchdog`/`--install-watchdog`). Unidad systemd hermana `Restart=always` que revive CENTINEL si lo matan, deshabilitan o enmascaran, y alerta CRITICAL al hacerlo (T1562.001). Cierra "kill del agente".
 2. ✅ **YARA opcional** (`--yara`) — HECHO. Escaneo de ficheros en directorios efímeros (`/tmp`, `/dev/shm`) contra reglas YARA; dependencia opcional `[yara]`, reglas genéricas empaquetadas + `--yara-rules` propias. Pendiente: escaneo de memoria de procesos y feeds de reglas actualizados.
-3. **Threat intel en vivo** — colector que descarga y cachea Feodo/URLhaus/ThreatFox (como ya se hace con KEV) y enriquece cada IP/dominio. Cierra "reputación limitada".
+3. ✅ **Threat intel en vivo** — HECHO (`--intel-update`). Descarga y cachea Feodo/SSLBL (abuse.ch), enriquece cada `src_ip` y sube a HIGH si está en un feed de C2/botnet. `--intel-feed` para blocklists propias. Cierra "reputación limitada" (pendiente: dominios/hashes).
 
 ### 🥈 Alto impacto, esfuerzo alto
 4. **Backend eBPF** — sustituir polling de `/proc` por tracepoints de kernel (`execve`, `ptrace`, `connect`, `bpf`). Elimina la ventana ciega y es la base técnica de los líderes. Grande, pero es el salto de liga.

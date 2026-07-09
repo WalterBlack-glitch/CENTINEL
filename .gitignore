@@ -5,6 +5,7 @@ __pycache__/
 *.db-shm
 *.hmac
 kev.json
+intel_blocklist.json
 centinela_feedback.txt
 .venv/
 venv/
@@ -12,3 +13,4 @@ venv/
 build/
 dist/
 .pytest_cache/
+bin/centinel
