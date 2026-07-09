@@ -5,6 +5,15 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Sin publicar]
 
 ### Añadido
+- **Scoring con ML ligero** (`centinel/ml/scoring.py`): modelo de regresión
+  logística **sin dependencias** (0 obligatorias) sobre las mismas señales que
+  ya extrae la correlación (fallos, usuarios, puertos, flags robótico/campaña/
+  canary/exploit/honeypot, intel de IP). Da una **confianza 0..1** como segunda
+  opinión: no sustituye a las reglas, las complementa — si la confianza es alta
+  (`ml-high`), sube la severidad mínima a HIGH, bajando falsos positivos. Pesos
+  calibrados a mano (recalibrables sin tocar lógica); todo puro + 11 tests. El
+  evento lleva `enrichment["ml_confidence"]`. Hace la evasión más difícil que
+  leer if/else (combinación no lineal de señales).
 - **Backend eBPF** (`--ebpf`, MITRE T1059): captura de `execve` por kprobe de
   kernel — **sin la ventana ciega** del polling de /proc; cada ejecución se ve
   en el instante en que ocurre, con su `argv` completo (técnica de Falcon/

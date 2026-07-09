@@ -29,7 +29,8 @@ centinel = "centinel.app:main"
 [tool.setuptools]
 packages = ["centinel", "centinel.collectors", "centinel.enrichment",
             "centinel.correlation", "centinel.storage",
-            "centinel.presentation", "centinel.response", "centinel.intel"]
+            "centinel.presentation", "centinel.response", "centinel.intel",
+            "centinel.ml"]
 
 [tool.setuptools.package-data]
 centinel = ["rules/*.yar"]

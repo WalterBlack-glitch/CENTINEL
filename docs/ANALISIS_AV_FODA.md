@@ -59,7 +59,7 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 | Early-boot (antes que el malware) | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Respuesta activa (firewall) | ✅ | ✅ | ✅ | ❌ | ✅ |
 | Rollback / deshacer daño | ❌ | ⚠️ | ✅ | ❌ | ❌ |
-| ML en endpoint | ❌ | ✅ | ✅ | ❌ | ⚠️ |
+| ML en endpoint | ⚠️ logístico | ✅ | ✅ | ❌ | ⚠️ |
 | Correlación cross-host / SIEM | ❌ | ✅ | ✅ | ❌ | ✅ |
 | Cloud reputation (hash/IP/dominio) | ⚠️ KEV+intel IP | ✅ | ✅ | ✅ | ⚠️ |
 | Auto-protección del agente | ⚠️ | ✅ | ✅ | ❌ | ⚠️ |
@@ -84,7 +84,7 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 
 ### 🩹 Debilidades
 - ~~**Sin firmas ni escaneo de ficheros**~~ — MITIGADO: `--yara` escanea ficheros en directorios efímeros contra reglas YARA (opcional). Falta cobertura de disco completo y feeds actualizados.
-- **Sin ML** — todo es heurística de reglas; un atacante que conoce las reglas puede evadirlas.
+- ~~**Sin ML**~~ — MITIGADO: `centinel/ml/scoring.py` añade una regresión logística sin dependencias como segunda opinión (confianza 0..1) que combina señales de forma no lineal y sube a HIGH lo que el modelo también ve malicioso. Pendiente: pipeline de entrenamiento con datos reales (hoy los pesos son calibrados a mano).
 - **Solo Linux** (Windows vía WSL, no protege Windows nativo).
 - **Sin rollback** — detecta y bloquea, pero no deshace el daño (cifrado ransomware, ficheros borrados).
 - **Un solo host** — sin correlación entre máquinas ni consola central.
@@ -121,7 +121,7 @@ las 3 primeras cierran las debilidades más caras.
 
 ### 🥈 Alto impacto, esfuerzo alto
 4. ✅ **Backend eBPF** — HECHO para `execve` (`--ebpf`). Kprobe de kernel, sin ventana ciega, reutiliza el veredicto de execwatch. Pendiente: extender a `ptrace`/`connect`/`bpf` para cubrir hijack y red en kernel también.
-5. **Scoring con ML ligero** — un modelo pequeño (árbol/regresión) sobre las features que ya extraemos (entropía DNS, CV de beacon, permisos de extensión). Reduce falsos positivos y hace la evasión más difícil que leer if/else.
+5. ✅ **Scoring con ML ligero** — HECHO (`centinel/ml/scoring.py`). Regresión logística sin dependencias sobre las features que ya extraemos; da una confianza 0..1 que complementa al score por reglas y sube a HIGH lo que el modelo confirma (tag `ml-high`). Combinación no lineal de señales → evasión más difícil que leer if/else. Pendiente: entrenar los pesos con datos reales en vez de calibrarlos a mano.
 
 ### 🥉 Mejora incremental
 6. **Modo flota** — varios agentes → un colector; el `--digest-webhook` ya apunta ahí.

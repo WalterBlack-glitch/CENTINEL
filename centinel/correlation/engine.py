@@ -22,6 +22,7 @@ from ..core import EventBus, Severity, ThreatEvent
 from .ai_defense import CampaignTracker, timing_cv, ROBOTIC_CV, MIN_INTERVALS
 from .cluster import ActorClusterer
 from ..advisor import advise
+from ..ml.scoring import score_actor, HIGH_CONFIDENCE
 
 WINDOW = 120.0       # segundos de memoria por actor
 MAX_ACTORS = 50_000  # tope duro: evita agotamiento de RAM (C-1)
@@ -138,6 +139,19 @@ class CorrelationEngine:
         actor.prune(now)
         actor.score = self._score(actor)
         ev.score = actor.score
+
+        # Segunda opinión: modelo logístico ligero sobre las mismas señales.
+        # No sustituye al score por reglas; lo complementa. Si la confianza es
+        # alta, se anota y se sube la severidad mínima a HIGH (baja el ruido de
+        # falsos positivos: solo escala lo que el modelo también ve malicioso).
+        conf = score_actor(
+            fails=len(actor.fails), users=len(actor.users),
+            ports=len(actor.ports), flags=actor.flags,
+            has_intel=("c2" in ev.tags or "threat-intel" in ev.tags))
+        ev.enrichment["ml_confidence"] = conf
+        if conf >= HIGH_CONFIDENCE:
+            ev.tags.add("ml-high")
+            ev.severity = max(ev.severity, Severity.HIGH)
 
         # Compromiso: login exitoso tras muchos fallos recientes.
         if ev.kind == "login_success" and len(actor.fails) >= 5:
