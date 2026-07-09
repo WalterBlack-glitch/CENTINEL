@@ -27,6 +27,7 @@ from .collectors.beacon import BeaconCollector
 from .collectors.execwatch import ExecWatchCollector
 from .collectors.hijackwatch import HijackWatch
 from .collectors.edgewatch import EdgeWatch
+from .collectors.yarawatch import YaraWatch
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -115,6 +116,10 @@ class Centinel:
         if args.edgewatch:
             self.collectors.append(
                 EdgeWatch(self.bus, interval=args.edgewatch_interval))
+        if args.yara:
+            self.collectors.append(
+                YaraWatch(self.bus, rules_path=args.yara_rules,
+                          interval=args.yara_interval))
         if args.rootcheck:
             from .maintenance import MaintenanceContext
             maint = None if args.maintenance_off else MaintenanceContext(
@@ -342,6 +347,15 @@ def main() -> None:
                         "(T1176/T1542/T1014/T1620/T1059).")
     p.add_argument("--edgewatch-interval", type=float, default=30.0,
                    help="segundos entre barridos del edgewatch")
+    p.add_argument("--yara", action="store_true",
+                   help="escaneo de firmas YARA sobre ficheros en directorios "
+                        "efímeros (/tmp, /dev/shm...). Cierra el hueco 'sin "
+                        "firmas'. Requiere el extra [yara] (yara-python).")
+    p.add_argument("--yara-rules", default=None,
+                   help="fichero .yar o directorio de reglas propias "
+                        "(por defecto usa las reglas empaquetadas).")
+    p.add_argument("--yara-interval", type=float, default=30.0,
+                   help="segundos entre barridos del escaneo YARA")
     p.add_argument("--rootcheck", action="store_true",
                    help="vigilar persistencia: SUID/SGID nuevos o en sitios raros "
                         "y cron/systemd con patrones de backdoor")

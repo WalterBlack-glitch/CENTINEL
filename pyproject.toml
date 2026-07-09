@@ -18,8 +18,9 @@ ui = ["rich>=13"]
 sniff = ["scapy>=2.5"]
 web = ["fastapi>=0.110", "uvicorn>=0.27", "websockets>=12"]
 geo = ["geoip2>=4.7"]
+yara = ["yara-python>=4.3"]
 all = ["rich>=13", "scapy>=2.5", "fastapi>=0.110", "uvicorn>=0.27",
-       "websockets>=12", "geoip2>=4.7"]
+       "websockets>=12", "geoip2>=4.7", "yara-python>=4.3"]
 test = ["pytest>=7", "pytest-asyncio>=0.23"]
 
 [project.scripts]
@@ -29,6 +30,9 @@ centinel = "centinel.app:main"
 packages = ["centinel", "centinel.collectors", "centinel.enrichment",
             "centinel.correlation", "centinel.storage",
             "centinel.presentation", "centinel.response", "centinel.intel"]
+
+[tool.setuptools.package-data]
+centinel = ["rules/*.yar"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

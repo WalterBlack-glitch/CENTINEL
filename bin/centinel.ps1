@@ -177,7 +177,8 @@ $opts = @(
   @{ key='7'; name='Forense (informe + cadena)';    color='07'; flags='--report --verify-log' },
   @{ key='8'; name='Anti-hijacking (LD_PRELOAD/PATH/ptrace)'; color='05'; flags='--simulate --hijackwatch' },
   @{ key='9'; name='Edge (browser/boot/kernel/fileless)'; color='0B'; flags='--simulate --edgewatch' },
-  @{ key='A'; name='AUTO-DEFENSA (todas las capas)';color='4F'; flags='--simulate --beacon --execwatch --dnswatch --rootcheck --hijackwatch --edgewatch --assess --block-threshold 70' }
+  @{ key='Y'; name='YARA (firmas en /tmp, /dev/shm)'; color='0E'; flags='--simulate --yara' },
+  @{ key='A'; name='AUTO-DEFENSA (todas las capas)';color='4F'; flags='--simulate --beacon --execwatch --dnswatch --rootcheck --hijackwatch --edgewatch --yara --assess --block-threshold 70' }
 )
 
 function Show-Menu {

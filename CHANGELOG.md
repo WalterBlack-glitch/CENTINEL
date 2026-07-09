@@ -5,6 +5,14 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Sin publicar]
 
 ### Añadido
+- **YaraWatch** (`--yara`, `--yara-rules`, extra `[yara]`): escaneo de firmas
+  YARA sobre ficheros en directorios efímeros (`/tmp`, `/dev/shm`, `/var/tmp`,
+  `/run/shm`) — cierra el hueco "sin firmas" sin tocar el core (dependencia
+  opcional; si `yara-python` no está, la capa se desactiva sola). Reglas
+  genéricas empaquetadas (`centinel/rules/default.yar`: reverse shells,
+  webshells PHP, mineros, ELF empacado, persistencia); `--yara-rules` acepta
+  un `.yar` o directorio propio. Severidad derivada de `meta.severity` de la
+  regla. Lógica de escaneo pura + 11 tests.
 - **Watchdog anti-kill** (`--watchdog`, `--install-watchdog`, MITRE T1562.001):
   servicio hermano `centinel-watchdog.service` (`Restart=always`) que vigila al
   principal y lo **revive** si un atacante con root lo mata, deshabilita o

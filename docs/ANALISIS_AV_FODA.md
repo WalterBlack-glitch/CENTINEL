@@ -44,7 +44,7 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 
 | Capacidad | CENTINEL | Defender | Falcon/S1 | ClamAV | Wazuh |
 |-----------|:--------:|:--------:|:---------:|:------:|:-----:|
-| Firmas de fichero | ❌ | ✅ | ✅ | ✅ | ⚠️ |
+| Firmas de fichero (YARA opcional) | ⚠️ | ✅ | ✅ | ✅ | ⚠️ |
 | Heurística estática de binario | ❌ | ✅ | ✅ | ⚠️ | ❌ |
 | Sandboxing | ❌ | ✅ | ✅ | ❌ | ❌ |
 | Análisis de comportamiento en vivo | ✅ | ✅ | ✅ | ❌ | ✅ |
@@ -82,7 +82,7 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 - **Clasificadores puros y testeados** (221 tests) — la lógica de detección es determinista y verificable.
 
 ### 🩹 Debilidades
-- **Sin firmas ni escaneo de ficheros** — no detecta malware conocido en disco antes de ejecutarse.
+- ~~**Sin firmas ni escaneo de ficheros**~~ — MITIGADO: `--yara` escanea ficheros en directorios efímeros contra reglas YARA (opcional). Falta cobertura de disco completo y feeds actualizados.
 - **Sin ML** — todo es heurística de reglas; un atacante que conoce las reglas puede evadirlas.
 - **Solo Linux** (Windows vía WSL, no protege Windows nativo).
 - **Sin rollback** — detecta y bloquea, pero no deshace el daño (cifrado ransomware, ficheros borrados).
@@ -115,7 +115,7 @@ las 3 primeras cierran las debilidades más caras.
 
 ### 🥇 Alto impacto, esfuerzo medio
 1. ✅ **Watchdog + auto-resurrección** — HECHO (`--watchdog`/`--install-watchdog`). Unidad systemd hermana `Restart=always` que revive CENTINEL si lo matan, deshabilitan o enmascaran, y alerta CRITICAL al hacerlo (T1562.001). Cierra "kill del agente".
-2. **YARA opcional** (`--yara <reglas>`) — escaneo de ficheros en directorios efímeros (`/tmp`, `/dev/shm`, uploads) y de la memoria de procesos sospechosos. Cierra "sin firmas" sin engordar el core.
+2. ✅ **YARA opcional** (`--yara`) — HECHO. Escaneo de ficheros en directorios efímeros (`/tmp`, `/dev/shm`) contra reglas YARA; dependencia opcional `[yara]`, reglas genéricas empaquetadas + `--yara-rules` propias. Pendiente: escaneo de memoria de procesos y feeds de reglas actualizados.
 3. **Threat intel en vivo** — colector que descarga y cachea Feodo/URLhaus/ThreatFox (como ya se hace con KEV) y enriquece cada IP/dominio. Cierra "reputación limitada".
 
 ### 🥈 Alto impacto, esfuerzo alto
