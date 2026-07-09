@@ -5,6 +5,13 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Sin publicar]
 
 ### Añadido
+- **Backend eBPF** (`--ebpf`, MITRE T1059): captura de `execve` por kprobe de
+  kernel — **sin la ventana ciega** del polling de /proc; cada ejecución se ve
+  en el instante en que ocurre, con su `argv` completo (técnica de Falcon/
+  Elastic). Reutiliza el clasificador puro de `execwatch` (mismo veredicto,
+  otra fuente). Capa opcional: requiere Linux + `bcc` + root; si falta, degrada
+  al polling de `--execwatch`. Si arranca, lo suplanta (no duplica alertas).
+  `build_info` puro + 7 tests que verifican paridad con execwatch.
 - **Threat intel en vivo** (`--intel-update`, `--intel-cache`, `--intel-feed`):
   blocklist de IPs C2/botnet desde feeds gratuitos (abuse.ch Feodo/SSLBL),
   offline-first y endurecida como el KEV. El Enricher marca cualquier evento

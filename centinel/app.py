@@ -28,6 +28,7 @@ from .collectors.execwatch import ExecWatchCollector
 from .collectors.hijackwatch import HijackWatch
 from .collectors.edgewatch import EdgeWatch
 from .collectors.yarawatch import YaraWatch
+from .collectors.ebpf_exec import EbpfExecCollector
 from .enrichment.resolver import Enricher
 from .enrichment.geo import GeoResolver
 from .intel.kev import KevCatalog
@@ -109,7 +110,18 @@ class Centinel:
         if args.beacon:
             self.collectors.append(
                 BeaconCollector(self.bus, interval=args.beacon_interval))
-        if args.execwatch:
+        # eBPF suplanta el polling de execwatch si arranca (mismo veredicto,
+        # sin ventana ciega). Se decide aquí para no duplicar alertas.
+        ebpf_active = False
+        if args.ebpf:
+            ec = EbpfExecCollector(self.bus)
+            try:
+                ebpf_active = ec.available()
+            except Exception:   # noqa: BLE001
+                ebpf_active = False
+            if ebpf_active:
+                self.collectors.append(ec)
+        if args.execwatch and not ebpf_active:
             self.collectors.append(
                 ExecWatchCollector(self.bus, interval=args.execwatch_interval))
         if args.hijackwatch:
@@ -355,6 +367,11 @@ def main() -> None:
                         "Vigila /proc; root = visión total de procesos.")
     p.add_argument("--execwatch-interval", type=float, default=2.0,
                    help="segundos entre barridos de procesos del execwatch")
+    p.add_argument("--ebpf", action="store_true",
+                   help="captura execve por tracepoint de kernel (eBPF): SIN "
+                        "ventana ciega de polling. Requiere Linux + bcc + root "
+                        "(apt install python3-bpfcc). Suplanta a --execwatch si "
+                        "arranca. Degrada al polling si bcc/kernel no están.")
     p.add_argument("--hijackwatch", action="store_true",
                    help="anti-hijacking: detecta LD_PRELOAD/PATH hijack, "
                         "ptrace ajeno y auto-defensa de centinel (T1574/T1055).")

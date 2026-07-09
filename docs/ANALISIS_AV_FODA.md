@@ -48,6 +48,7 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 | Heurística estática de binario | ❌ | ✅ | ✅ | ⚠️ | ❌ |
 | Sandboxing | ❌ | ✅ | ✅ | ❌ | ❌ |
 | Análisis de comportamiento en vivo | ✅ | ✅ | ✅ | ❌ | ✅ |
+| Tracing de kernel (eBPF) | ✅ execve | ⚠️ | ✅ | ❌ | ❌ |
 | Detección de red (sniff/C2/DNS-exfil) | ✅ | ⚠️ | ✅ | ❌ | ⚠️ |
 | Anti-hijacking (LD_PRELOAD/PATH/ptrace) | ✅ | ⚠️ | ✅ | ❌ | ❌ |
 | Fileless / LOLBins / memfd | ✅ | ✅ | ✅ | ❌ | ⚠️ |
@@ -88,7 +89,7 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 - **Sin rollback** — detecta y bloquea, pero no deshace el daño (cifrado ransomware, ficheros borrados).
 - **Un solo host** — sin correlación entre máquinas ni consola central.
 - ~~**Auto-protección débil**~~ — CERRADO: el watchdog (`--install-watchdog`) revive CENTINEL si lo matan/deshabilitan/enmascaran y alerta CRITICAL.
-- **Polling, no hooks en kernel** — hay una ventana entre el escaneo y el evento; un proceso efímero puede aparecer y morir entre barridos.
+- ~~**Polling, no hooks en kernel**~~ — MITIGADO para execve: `--ebpf` engancha un kprobe de kernel y ve cada ejecución sin ventana ciega. Resto de capas (red, persistencia) siguen por polling.
 - ~~**Reputación limitada**~~ — MITIGADO: `--intel-update` añade feeds de IPs C2/botnet (abuse.ch). Falta cobertura de dominios y hashes.
 
 ### 🚪 Oportunidades
@@ -119,7 +120,7 @@ las 3 primeras cierran las debilidades más caras.
 3. ✅ **Threat intel en vivo** — HECHO (`--intel-update`). Descarga y cachea Feodo/SSLBL (abuse.ch), enriquece cada `src_ip` y sube a HIGH si está en un feed de C2/botnet. `--intel-feed` para blocklists propias. Cierra "reputación limitada" (pendiente: dominios/hashes).
 
 ### 🥈 Alto impacto, esfuerzo alto
-4. **Backend eBPF** — sustituir polling de `/proc` por tracepoints de kernel (`execve`, `ptrace`, `connect`, `bpf`). Elimina la ventana ciega y es la base técnica de los líderes. Grande, pero es el salto de liga.
+4. ✅ **Backend eBPF** — HECHO para `execve` (`--ebpf`). Kprobe de kernel, sin ventana ciega, reutiliza el veredicto de execwatch. Pendiente: extender a `ptrace`/`connect`/`bpf` para cubrir hijack y red en kernel también.
 5. **Scoring con ML ligero** — un modelo pequeño (árbol/regresión) sobre las features que ya extraemos (entropía DNS, CV de beacon, permisos de extensión). Reduce falsos positivos y hace la evasión más difícil que leer if/else.
 
 ### 🥉 Mejora incremental
