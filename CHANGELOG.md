@@ -5,6 +5,17 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Sin publicar]
 
 ### Añadido
+- **ProcWatch + CENTINEL Escritorio** (`centinel/collectors/procwatch.py`,
+  `centinel/desktop.py`, MITRE T1036.005): compañero para **Windows** que caza
+  malware disfrazado de proceso del sistema (`svchost.exe`, `lsass.exe`…). Regla
+  **basada en firma**, no en el nombre: alerta si un nombre de sistema no está
+  firmado válidamente por Microsoft, si un `svchost` cuelga de un padre que no es
+  `services.exe`, o si un binario corre desde `%TEMP%`/`%APPDATA%`/`Downloads`
+  sin firma de editor de confianza. Clasificador **puro** (`classify_process`) +
+  13 tests; el I/O de Windows (enumerar procesos y verificar Authenticode) se
+  apoya en PowerShell — **0 dependencias pip**. `centinel-desktop` abre una
+  ventana tkinter con el veredicto (LIMPIO / N amenazas) y el top de consumidores
+  de RAM. En Linux el colector se desactiva solo (`available()` -> False).
 - **Scoring con ML ligero** (`centinel/ml/scoring.py`): modelo de regresión
   logística **sin dependencias** (0 obligatorias) sobre las mismas señales que
   ya extrae la correlación (fallos, usuarios, puertos, flags robótico/campaña/

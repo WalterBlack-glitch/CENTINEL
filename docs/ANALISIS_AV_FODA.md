@@ -85,7 +85,10 @@ ficheros. Es más honesto compararlo con Wazuh o Suricata que con Defender.
 ### 🩹 Debilidades
 - ~~**Sin firmas ni escaneo de ficheros**~~ — MITIGADO: `--yara` escanea ficheros en directorios efímeros contra reglas YARA (opcional). Falta cobertura de disco completo y feeds actualizados.
 - ~~**Sin ML**~~ — MITIGADO: `centinel/ml/scoring.py` añade una regresión logística sin dependencias como segunda opinión (confianza 0..1) que combina señales de forma no lineal y sube a HIGH lo que el modelo también ve malicioso. Pendiente: pipeline de entrenamiento con datos reales (hoy los pesos son calibrados a mano).
-- **Solo Linux** (Windows vía WSL, no protege Windows nativo).
+- **Solo Linux** en el core (Windows vía WSL). PARCIAL: `procwatch` +
+  `centinel-desktop` añaden un compañero nativo de Windows que caza procesos que
+  suplantan al sistema y muestra el consumo de RAM; aún no es un HIDS completo en
+  Windows.
 - **Sin rollback** — detecta y bloquea, pero no deshace el daño (cifrado ransomware, ficheros borrados).
 - **Un solo host** — sin correlación entre máquinas ni consola central.
 - ~~**Auto-protección débil**~~ — CERRADO: el watchdog (`--install-watchdog`) revive CENTINEL si lo matan/deshabilitan/enmascaran y alerta CRITICAL.

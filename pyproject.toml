@@ -25,6 +25,7 @@ test = ["pytest>=7", "pytest-asyncio>=0.23"]
 
 [project.scripts]
 centinel = "centinel.app:main"
+centinel-desktop = "centinel.desktop:main"
 
 [tool.setuptools]
 packages = ["centinel", "centinel.collectors", "centinel.enrichment",
