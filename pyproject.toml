@@ -31,7 +31,7 @@ centinel-desktop = "centinel.desktop:main"
 packages = ["centinel", "centinel.collectors", "centinel.enrichment",
             "centinel.correlation", "centinel.storage",
             "centinel.presentation", "centinel.response", "centinel.intel",
-            "centinel.ml"]
+            "centinel.ml", "centinel.recon"]
 
 [tool.setuptools.package-data]
 centinel = ["rules/*.yar"]

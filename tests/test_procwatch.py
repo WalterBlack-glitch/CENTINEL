@@ -73,6 +73,40 @@ def test_binario_sin_firma_en_downloads_es_alto():
     assert any("carpeta escribible" in r for r in reasons)
 
 
+def test_node_en_appdata_alerta_sin_allowlist():
+    # node.exe (Claude Code) firmado por OpenJS, no confiable, en carpeta de
+    # usuario => dispara la regla de carpeta escribible.
+    p = ProcInfo(1500, "node.exe",
+                 r"C:\Users\Cris\AppData\Roaming\npm\node_modules\node.exe",
+                 "OpenJS Foundation", True, "powershell.exe")
+    reasons, sev = _c(p)
+    assert sev == int(Severity.HIGH)
+    assert any("carpeta escribible" in r for r in reasons)
+
+
+def test_allowlist_por_ruta_silencia_carpeta_escribible():
+    p = ProcInfo(1500, "node.exe",
+                 r"C:\Users\Cris\AppData\Roaming\npm\node_modules\node.exe",
+                 "OpenJS Foundation", True, "powershell.exe")
+    allow = (norm_path(r"C:\Users\Cris\AppData\Roaming\npm"),)
+    reasons, sev = classify_process(
+        p, win_dir=WIN, writable_dirs=WRITABLE, allowed_paths=allow)
+    assert reasons == [] and sev == 0
+
+
+def test_allowlist_no_tapa_suplantacion_de_sistema():
+    # Aunque la ruta esté whitelisteada, un nombre de sistema sin firma MS
+    # sigue siendo suplantación: la allowlist solo exime la regla escribible.
+    p = ProcInfo(1501, "lsass.exe",
+                 r"C:\Users\Cris\AppData\Roaming\npm\lsass.exe",
+                 "OpenJS Foundation", True, "cmd.exe")
+    allow = (norm_path(r"C:\Users\Cris\AppData\Roaming\npm"),)
+    reasons, sev = classify_process(
+        p, win_dir=WIN, writable_dirs=WRITABLE, allowed_paths=allow)
+    assert sev == int(Severity.CRITICAL)
+    assert any("SUPLANTACIÓN" in r for r in reasons)
+
+
 def test_app_firmada_de_confianza_en_appdata_no_alerta():
     # Claude Code vive en AppData\Roaming pero está firmado por Anthropic.
     p = ProcInfo(1100, "claude.exe",
@@ -88,6 +122,48 @@ def test_nombre_sistema_ms_firmado_fuera_de_windows_es_alto():
     reasons, sev = _c(p)
     assert sev == int(Severity.HIGH)
     assert any("fuera de" in r for r in reasons)
+
+
+def test_lsass_padre_anomalo_es_critico():
+    # lsass real cuelga de wininit; colgando de cmd => volcado/hollowing.
+    p = ProcInfo(700, "lsass.exe", r"C:\Windows\System32\lsass.exe",
+                 "Microsoft Windows", True, "cmd.exe")
+    reasons, sev = _c(p)
+    assert sev == int(Severity.CRITICAL)
+    assert any("padre anómalo" in r for r in reasons)
+
+
+def test_lsass_padre_correcto_no_alerta():
+    p = ProcInfo(701, "lsass.exe", r"C:\Windows\System32\lsass.exe",
+                 "Microsoft Windows", True, "wininit.exe")
+    reasons, sev = _c(p)
+    assert reasons == [] and sev == 0
+
+
+def test_fontdrvhost_acepta_wininit_o_winlogon():
+    p = ProcInfo(702, "fontdrvhost.exe",
+                 r"C:\Windows\System32\fontdrvhost.exe",
+                 "Microsoft Windows", True, "winlogon.exe")
+    reasons, sev = _c(p)
+    assert reasons == [] and sev == 0
+
+
+def test_binario_sistema_en_subcarpeta_anomala_de_windows():
+    # svchost MS-firmado pero plantado en C:\Windows\Fonts (masquerading LOLBin).
+    p = ProcInfo(800, "svchost.exe", r"C:\Windows\Fonts\svchost.exe",
+                 "Microsoft Windows", True, "services.exe")
+    reasons, sev = _c(p)
+    assert sev == int(Severity.HIGH)
+    assert any("ubicación anómala" in r for r in reasons)
+
+
+def test_explorer_en_system32_es_anomalo():
+    # explorer legítimo vive en la raíz de Windows, no en System32.
+    p = ProcInfo(801, "explorer.exe", r"C:\Windows\System32\explorer.exe",
+                 "Microsoft Windows", True, "userinit.exe")
+    reasons, sev = _c(p)
+    assert sev == int(Severity.HIGH)
+    assert any("ubicación anómala" in r for r in reasons)
 
 
 def test_norm_path_quita_prefijo_extendido():

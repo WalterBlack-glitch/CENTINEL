@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-10-08 — historial, informes, configuración, bitácora y arranque
+
+### Nuevo
+- **`snapshots`**: historial de escaneos y diff («esto es nuevo desde ayer»):
+  nuevos / agravados / resueltos / sin cambio. Historial JSONL firmado con HMAC;
+  la identidad de un hallazgo es `tipo|nombre|ruta`, nunca el PID. (ROADMAP #8)
+- **`collectors/winpersist`**: vectores de arranque de Windows en solo lectura —
+  `Run`/`RunOnce` (HKLM y HKCU), Startup, servicios y tareas programadas, con
+  patrones de living-off-the-land en la línea de comando. (ROADMAP #5)
+- **`collectors/hashwatch`**: integridad en disco de los binarios del sistema
+  (SHA-256 + firma), con línea base firmada. Cambió y sigue MS-firmado = LOW;
+  cambió sin firma válida = CRITICAL. (ROADMAP #4)
+- **`storage/export`**: informes JSON / CSV / HTML con fecha en el nombre, HTML
+  escapado y CSV injection neutralizada. (ROADMAP #7)
+- **`storage/audit`**: bitácora JSONL append-only con rotación. (ROADMAP #13)
+- **`config`**: `centinel.toml` opcional que nunca tumba el arranque. (ROADMAP #10)
+- **`centinel.desktop`**: modo `--once` sin ventana (código de salida 2 si hay
+  hallazgos, apto para el Programador de tareas), `--export`, `--config`,
+  `--write-config`, botón «Exportar informe», columna «Estado» con lo nuevo y
+  auto-escaneo opcional.
+
+### Corregido
+- **La verificación de firmas no funcionaba nunca.** Se pasaban las rutas a
+  PowerShell como argumentos tras `--`, que con `-Command` no llegan a `$args`
+  (eso es solo de `-File`), así que la consulta devolvía vacío siempre. Ahora van
+  incrustadas en el script como literales con comillas escapadas. Síntoma
+  visible: seis falsos positivos CRITICAL contra Windows Defender.
+- **`Valid` vale 0 en el enum de PowerShell**, así que `if($s.Status)` era falso
+  y todo salía como `UnknownError`. Se comprueba el objeto, no su verdad.
+- **`subprocess` decodificaba la salida de PowerShell en cp1252** y los subjects
+  de certificado con acentos lanzaban `UnicodeDecodeError` en el hilo lector,
+  dejando el escaneo sin datos. Se fuerza UTF-8 en los dos extremos
+  (`hashwatch`, `winpersist` y el resumen de RAM del escritorio).
+- **`--once` reventaba al imprimir** `⚠` en una consola cp1252. Se reconfigura la
+  salida a UTF-8 y, si no se puede, se cae a símbolos ASCII.
+- **`pyproject.toml` no empaquetaba `centinel.recon`**: un `pip install` dejaba
+  fuera el módulo RECON entero.
+
+### Tests
+333 → **686** (8 s, sin red y sin tocar el sistema).
+
 Formato basado en [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Sin publicar]

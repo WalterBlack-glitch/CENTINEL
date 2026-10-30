@@ -35,6 +35,11 @@ from dataclasses import dataclass
 from ..core import Severity, ThreatEvent
 from .base import Collector
 
+# En Windows, un subprocess lanzado desde una app con GUI (el tracker tkinter)
+# abre una ventana de consola por cada llamada. CREATE_NO_WINDOW la suprime; en
+# POSIX el atributo no existe y cae a 0 (sin efecto).
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 # Nombres de procesos que el SO ejecuta y que el malware suele imitar.
 SYSTEM_PROCESS_NAMES = frozenset({
     "smss.exe", "csrss.exe", "wininit.exe", "services.exe", "lsass.exe",
@@ -50,6 +55,42 @@ TRUSTED_SIGNERS = (
     "opera", "nvidia", "advanced micro devices", "malwarebytes", "spotify",
     "python software foundation", "steam",
 )
+
+# Padre legítimo esperado por proceso del sistema. Solo se listan los que
+# cuelgan de un padre que SIGUE VIVO (wininit / services): smss, csrss y
+# winlogon cuelgan de un smss de sesión que ya salió, así que su padre aparece
+# vacío y no se puede verificar sin falsos positivos — por eso se omiten aquí.
+PARENT_LINEAGE: dict[str, tuple[str, ...]] = {
+    "svchost.exe": ("services.exe",),
+    "lsass.exe": ("wininit.exe",),
+    "services.exe": ("wininit.exe",),
+    "fontdrvhost.exe": ("wininit.exe", "winlogon.exe"),
+}
+
+# Binarios cuya ubicación canónica dentro de Windows es estable y verificable.
+# Se omiten a propósito los hosts modernos (SearchHost, StartMenuExperienceHost)
+# que viven en subcarpetas SystemApps y darían falsos positivos.
+_CANONICAL_CHECKED = frozenset({
+    "smss.exe", "csrss.exe", "wininit.exe", "services.exe", "lsass.exe",
+    "winlogon.exe", "svchost.exe", "spoolsv.exe", "conhost.exe", "dwm.exe",
+    "userinit.exe", "taskhostw.exe", "explorer.exe",
+})
+# Binarios que viven en la RAÍZ de C:\Windows, no en System32.
+_ROOT_BINARIES = frozenset({"explorer.exe"})
+# Subcarpetas donde vive el resto (64-bit / 32-bit).
+_CANONICAL_SUBDIRS = ("system32", "syswow64")
+
+
+def _in_canonical_dir(name: str, path_l: str, win_l: str) -> bool:
+    """¿El binario del sistema está en su carpeta canónica dentro de Windows?
+
+    `path_l` y `win_l` llegan normalizados en minúsculas; se asume que
+    `path_l` empieza por `win_l` (lo garantiza el llamador).
+    """
+    rel = path_l[len(win_l):].lstrip("\\/")
+    if name in _ROOT_BINARIES:
+        return "\\" not in rel and "/" not in rel   # directamente en la raíz
+    return rel.startswith(_CANONICAL_SUBDIRS)
 
 
 @dataclass(frozen=True)
@@ -78,12 +119,24 @@ def _is_trusted(signer: str) -> bool:
     return any(t in s for t in TRUSTED_SIGNERS)
 
 
+def _path_allowed(path_l: str, allowed_paths: tuple[str, ...]) -> bool:
+    """¿La ruta (ya normalizada) cae bajo un prefijo de la allowlist?
+
+    Sirve para eximir instalaciones legítimas que viven en carpetas escribibles
+    (p. ej. Claude Code / node vía npm) SIN confiar en todo su firmante. Solo
+    afecta a la regla de 'carpeta escribible'; la suplantación de nombre de
+    sistema (reglas 1 y 2) sigue disparando aunque la ruta esté en la lista.
+    """
+    return any(pref and path_l.startswith(pref) for pref in allowed_paths)
+
+
 def classify_process(
     p: ProcInfo,
     *,
     win_dir: str,
     writable_dirs: tuple[str, ...],
     system_names: frozenset[str] = SYSTEM_PROCESS_NAMES,
+    allowed_paths: tuple[str, ...] = (),
 ) -> tuple[list[str], int]:
     """Clasifica un proceso. Devuelve (motivos, severidad_int). Pura.
 
@@ -114,16 +167,25 @@ def classify_process(
         elif not path_l.startswith(win_l):
             bump(f"'{p.name}' firmado por Microsoft pero fuera de "
                  f"{win_dir} ({p.path})", int(Severity.HIGH))
+        elif name in _CANONICAL_CHECKED and \
+                not _in_canonical_dir(name, path_l, win_l):
+            bump(f"'{p.name}' firmado por Microsoft pero en ubicación anómala "
+                 f"dentro de Windows ({p.path}; se espera System32/SysWOW64)",
+                 int(Severity.HIGH))
 
-    # 2) svchost con padre anómalo: el real siempre cuelga de services.exe.
-    if name == "svchost.exe" and p.parent_name and \
-            p.parent_name.lower() != "services.exe":
-        bump(f"svchost.exe con padre anómalo '{p.parent_name}' "
-             f"(el legítimo cuelga de services.exe)", int(Severity.CRITICAL))
+    # 2) Linaje: varios procesos del sistema cuelgan siempre de un padre fijo y
+    #    vivo. Un padre distinto (conocido) es la huella clásica de un dropper o
+    #    de process hollowing.
+    expected_parents = PARENT_LINEAGE.get(name)
+    if expected_parents and p.parent_name and \
+            p.parent_name.lower() not in expected_parents:
+        exp = " o ".join(expected_parents)
+        bump(f"{p.name} con padre anómalo '{p.parent_name}' "
+             f"(el legítimo cuelga de {exp})", int(Severity.CRITICAL))
 
     # 3) Ejecutable residente en carpeta de usuario escribible sin firma de
     #    confianza (droppers en %TEMP%/%APPDATA%/Downloads…).
-    if path_l:
+    if path_l and not _path_allowed(path_l, allowed_paths):
         for d in writable_dirs:
             if d and path_l.startswith(d):
                 if not (p.sig_valid and _is_trusted(p.signer)):
@@ -140,12 +202,14 @@ def scan(
     *,
     win_dir: str,
     writable_dirs: tuple[str, ...],
+    allowed_paths: tuple[str, ...] = (),
 ) -> list[ThreatEvent]:
     """Clasifica una lista de procesos y devuelve los eventos de amenaza. Pura."""
     events: list[ThreatEvent] = []
     for p in procs:
         reasons, sev = classify_process(
-            p, win_dir=win_dir, writable_dirs=writable_dirs)
+            p, win_dir=win_dir, writable_dirs=writable_dirs,
+            allowed_paths=allowed_paths)
         if not reasons:
             continue
         events.append(ThreatEvent(
@@ -166,6 +230,17 @@ def scan(
 
 def default_win_dir() -> str:
     return os.environ.get("WinDir", r"C:\Windows")
+
+
+def default_allowed_paths() -> tuple[str, ...]:
+    """Prefijos de ruta a eximir de la regla de 'carpeta escribible'.
+
+    Fuente: la env var CENTINEL_PROCWATCH_ALLOW, con rutas separadas por el
+    separador nativo (';' en Windows). Pensado para whitelistar tu instalación
+    de Claude Code / node sin confiar en todo OpenJS. Vacía por defecto.
+    """
+    raw = os.environ.get("CENTINEL_PROCWATCH_ALLOW", "")
+    return tuple(norm_path(p) for p in raw.split(os.pathsep) if p.strip())
 
 
 def default_writable_dirs() -> tuple[str, ...]:
@@ -211,7 +286,8 @@ def enumerate_windows_procs(timeout: float = 90.0) -> list[ProcInfo]:
     try:
         res = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS_ENUM],
-            capture_output=True, text=True, timeout=timeout)
+            capture_output=True, text=True, timeout=timeout,
+            creationflags=NO_WINDOW)
     except (OSError, subprocess.TimeoutExpired):
         return []
     data = (res.stdout or "").strip()
@@ -246,6 +322,7 @@ class ProcWatchCollector(Collector):
         self._alerted: dict[str, float] = {}
         self._win_dir = default_win_dir()
         self._writable = default_writable_dirs()
+        self._allowed = default_allowed_paths()
 
     def available(self) -> bool:
         return os.name == "nt"
@@ -257,7 +334,8 @@ class ProcWatchCollector(Collector):
             try:
                 procs = await asyncio.to_thread(enumerate_windows_procs)
                 for ev in scan(procs, win_dir=self._win_dir,
-                               writable_dirs=self._writable):
+                               writable_dirs=self._writable,
+                               allowed_paths=self._allowed):
                     key = f"{ev.enrichment.get('path')}\x1f{ev.enrichment.get('pid')}"
                     now = time.time()
                     last = self._alerted.get(key)

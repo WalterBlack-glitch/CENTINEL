@@ -534,3 +534,108 @@ veces: sin ningún extra (verifica las 0 dependencias obligatorias) y con
 ## Licencia
 
 MIT.
+
+---
+
+## Escritorio de Windows: historial, informes y configuración
+
+El escritorio ya no solo dice *qué hay*, sino **qué cambió desde el último
+escaneo**, y deja constancia de cada pasada.
+
+```bash
+python -m centinel.desktop                       # ventana
+python -m centinel.desktop --once                # un escaneo por consola
+python -m centinel.desktop --once --export html  # y deja el informe con fecha
+python -m centinel.desktop --write-config        # crea un centinel.toml comentado
+```
+
+`--once` devuelve **0** si está limpio y **2** si hay hallazgos, así que sirve
+para el Programador de tareas de Windows o para un script que avise.
+
+### Qué mira en cada escaneo
+
+| Capa | Módulo | Qué caza | Por defecto |
+|---|---|---|---|
+| Suplantación de procesos | `collectors/procwatch` | nombre de sistema + firma + linaje + ruta canónica | sí |
+| Inyección de DLL / side-loading | `collectors/injectwatch` | módulos cargados desde sitios anómalos | sí |
+| Vectores de arranque | `collectors/winpersist` | `Run`/`RunOnce`, Startup, servicios, tareas | sí |
+| Integridad en disco | `collectors/hashwatch` | binarios del sistema reemplazados (SHA-256 + firma) | no |
+
+### Historial y diff
+
+Cada escaneo deja un retrato en `%LOCALAPPDATA%\CENTINEL\history\history.jsonl`
+y se compara con el anterior: **nuevos**, **agravados**, **resueltos** y **sin
+cambio**. La cabecera lo resume en una frase ("Desde el escaneo anterior: 1
+nuevo [CRITICAL], 3 sin cambio") y la tabla marca cada fila.
+
+El historial va **firmado con HMAC**. No es paranoia decorativa: el diff decide
+qué se le enseña al usuario, así que un historial editable permitiría a un
+atacante colar su implante en el retrato de ayer para que hoy saliera como «ya
+conocido» y se perdiera entre el ruido. Una línea con firma inválida no se
+carga. La identidad de un hallazgo es `tipo|nombre|ruta` y **nunca el PID**, que
+cambia en cada reinicio y haría que todo pareciese nuevo siempre.
+
+### Informes
+
+`storage/export` genera JSON (fiel), CSV o HTML autocontenido con tema claro y
+oscuro, con la fecha en el nombre: `centinel-2026-10-08_223319.html`. Dos
+detalles que un informe de seguridad necesita, porque parte de su contenido lo
+escribe el atacante:
+
+- **HTML escapado.** Un proceso llamado `<img src=x onerror=...>` convertiría el
+  informe de la intrusión en el segundo vector de la intrusión.
+- **CSV injection neutralizada.** Un campo que empiece por `=`, `+`, `-` o `@`
+  lo ejecuta Excel como fórmula (`=cmd|'/c calc'!A1`); se le antepone un
+  apóstrofe.
+
+### Bitácora
+
+`%LOCALAPPDATA%\CENTINEL\audit.jsonl`, append-only, una línea JSON por hallazgo
+y una por escaneo, con rotación por tamaño. Legible con `grep` o `jq` y lista
+para un SIEM. Es **trazabilidad**, no integridad verificable: para eso están la
+cadena HMAC del event store (`--verify-log`) y el historial firmado.
+
+### centinel.toml
+
+Todo opcional; lo que falte usa su valor por defecto. Se busca en la ruta que
+pidas, en `CENTINEL_CONFIG`, en el directorio actual y en `%APPDATA%\CENTINEL\`
+(o `$XDG_CONFIG_HOME/centinel/` fuera de Windows).
+
+```toml
+[deteccion]
+min_severity = "LOW"       # INFO | LOW | MEDIUM | HIGH | CRITICAL
+allow_paths = []           # se suman a CENTINEL_PROCWATCH_ALLOW
+watch_injection = true
+watch_persistence = true
+watch_hashes = false
+
+[historial]
+keep = 200
+
+[informe]
+formato = "html"           # html | json | csv
+dir = "."
+
+[escaneo]
+auto_seconds = 0           # 0 = solo cuando pulsas Reescanear
+```
+
+**Un TOML roto no tumba CENTINEL**: se usan los valores por defecto y los
+problemas se imprimen como avisos. Un IDS que no arranca porque sobra una coma
+en su configuración es un IDS que no te está protegiendo.
+
+### Sobre el ruido
+
+Detectar es fácil; no gritar es lo difícil. Un IDS que avisa de todo enseña al
+usuario a ignorarlo, que es el peor resultado posible. Tres reglas concretas
+salieron de medir contra esta máquina (13 avisos → 3 reales):
+
+- **Fuerte vs. débil.** `-enc`, `iex`, `certutil -urlcache` o `mshta http…`
+  deciden solos. «Ventana oculta» o `-nop` solo acompañan — y en una tarea
+  programada no cuentan, porque ahí es lo normal (no hay escritorio).
+- **No firmado ≠ no verificable.** El motor de Defender no se deja leer ni para
+  comprobar su firma; tratar ese error como «sin firmar» producía seis falsos
+  positivos CRITICAL contra el propio antivirus de Windows.
+- **Lo que no se puede firmar, no se acusa de no estarlo.** Un `.lnk` o un
+  `.cmd` jamás llevan Authenticode; se informa como «no verificable por firma»
+  en MEDIUM, no como hallazgo grave.
