@@ -40,3 +40,38 @@ def test_build_sniff_cmd():
     assert "-c" in cmd and "50" in cmd
     with pytest.raises(ValueError):
         build_sniff_cmd("")
+
+
+CAP6 = """
+10:00:01.1 IP6 2001:db8::10.51000 > 2606:4700:4700::1111.443: tcp 0
+10:00:01.2 IP6 2606:4700:4700::1111.443 > 2001:db8::10.51000: tcp 120
+10:00:01.3 IP6 fe80::1.51001 > fe80::2.53: UDP, length 40 AAAA? ipv6.example.com.
+"""
+
+
+def test_summarize_parsea_ipv6():
+    s = summarize_capture(CAP6)
+    assert s["packets"] == 3
+    assert s["by_proto"].get("https") == 2
+    assert s["by_proto"].get("dns") == 1
+    talkers = dict(s["top_talkers"])
+    assert talkers["2001:db8::10"] == 2
+    assert talkers["fe80::1"] == 1
+
+
+def test_summarize_ipv6_extrae_dns_aaaa():
+    s = summarize_capture(CAP6)
+    assert dict(s["dns_queries"]).get("ipv6.example.com") == 1
+
+
+def test_summarize_mezcla_v4_y_v6():
+    s = summarize_capture(CAP + CAP6)
+    assert s["packets"] == 7   # 4 IPv4 + 3 IPv6
+
+
+def test_build_sniff_cmd_a_pcap():
+    cmd = build_sniff_cmd("eth0", count=50, pcap="/tmp/cap.pcap")
+    assert "-w" in cmd and "/tmp/cap.pcap" in cmd
+    assert cmd[cmd.index("-w") + 1] == "/tmp/cap.pcap"
+    # sin pcap no aparece -w
+    assert "-w" not in build_sniff_cmd("eth0")

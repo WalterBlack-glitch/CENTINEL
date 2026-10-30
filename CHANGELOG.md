@@ -14,10 +14,13 @@
 - **Informe HTML del recon** (`report.render_html`, export escribe `.html`):
   autocontenido, tema claro/oscuro, con todo valor pasado por `html.escape`
   porque parte del contenido lo escribe el objetivo escaneado. (RECON #4)
+- **Sniffer IPv6 + captura `.pcap`**: `summarize_capture` parsea líneas IPv6 de
+  tcpdump (protocolos, hablantes, DNS AAAA); `build_sniff_cmd`/`capture` aceptan
+  `pcap=` para grabar la captura a fichero y abrirla en Wireshark. (RECON #3)
 
 ### Tests
-686 → **707** (1 skip). Recon: 37 → **60** (incluye I/O simulado de `run_nmap`,
-que prefiere XML y cae a texto).
+686 → **711** (1 skip). Recon: 37 → **64** (incluye I/O simulado de `run_nmap`,
+que prefiere XML y cae a texto, y el parseo IPv6/pcap del sniffer).
 
 
 ## 2026-10-08 — historial, informes, configuración, bitácora y arranque
