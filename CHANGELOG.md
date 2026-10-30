@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-30 — RECON: nmap XML, diff entre corridas e informe HTML
+
+### Nuevo
+- **RECON parsea nmap por XML** (`-oX`): `parse_nmap_xml` (puro) y `run_nmap`,
+  que ahora emite XML además del texto legible y lo prefiere. El XML es estable
+  entre versiones y trae producto/versión/extrainfo del servicio por separado;
+  si falta o no parsea, se cae al parseo de la tabla de texto. (RECON #1)
+- **`recon/diff`** (puro): compara dos conjuntos de hallazgos por su clave
+  natural (`tipo|puerto|proto|url|fuzz`, nunca el PID) → nuevos / desaparecidos
+  / comunes, con titular «Desde la corrida anterior: N nuevo(s)». El TUI lo
+  muestra tras cada scan; sirve igual para diff entre sesiones. (RECON #4)
+- **Informe HTML del recon** (`report.render_html`, export escribe `.html`):
+  autocontenido, tema claro/oscuro, con todo valor pasado por `html.escape`
+  porque parte del contenido lo escribe el objetivo escaneado. (RECON #4)
+
+### Tests
+686 → **707** (1 skip). Recon: 37 → **60** (incluye I/O simulado de `run_nmap`,
+que prefiere XML y cae a texto).
+
+
 ## 2026-10-08 — historial, informes, configuración, bitácora y arranque
 
 ### Nuevo

@@ -31,8 +31,12 @@ NMAP_NEEDS_ROOT = frozenset({"stealth"})
 
 
 def build_nmap_cmd(mode: str, target: str, *, outfile: str | None = None,
-                   binary: str = "nmap") -> list[str]:
-    """Devuelve la lista de argumentos de nmap para `mode`+`target`. Pura."""
+                   xmlfile: str | None = None, binary: str = "nmap") -> list[str]:
+    """Devuelve la lista de argumentos de nmap para `mode`+`target`. Pura.
+
+    `outfile` (-oN) es el texto legible para el humano; `xmlfile` (-oX) es el
+    formato estable que luego parseamos. `xmlfile="-"` manda el XML a stdout.
+    """
     if mode not in NMAP_MODES:
         raise ValueError(f"modo nmap desconocido: {mode!r}")
     if not target:
@@ -40,6 +44,8 @@ def build_nmap_cmd(mode: str, target: str, *, outfile: str | None = None,
     cmd = [binary, *NMAP_MODES[mode]]
     if outfile:
         cmd += ["-oN", outfile]
+    if xmlfile:
+        cmd += ["-oX", xmlfile]
     cmd.append(target)
     return cmd
 
@@ -83,8 +89,12 @@ def run_nmap(mode: str, target: str, *, out_dir: Path | None = None,
     if mode in NMAP_NEEDS_ROOT and not is_root:
         res.error = "el scan sigiloso (-sS) requiere privilegios de root"
         return res
-    outfile = str(out_dir / f"nmap_{mode}.txt") if out_dir else None
-    res.command = build_nmap_cmd(mode, target, outfile=outfile)
+    if out_dir:
+        outfile = str(out_dir / f"nmap_{mode}.txt")
+        xmlfile = str(out_dir / f"nmap_{mode}.xml")
+    else:
+        outfile, xmlfile = None, "-"   # sin carpeta de sesión: XML por stdout
+    res.command = build_nmap_cmd(mode, target, outfile=outfile, xmlfile=xmlfile)
     try:
         p = subprocess.run(res.command, capture_output=True, text=True,
                            timeout=timeout, creationflags=NO_WINDOW)
@@ -93,7 +103,14 @@ def run_nmap(mode: str, target: str, *, out_dir: Path | None = None,
         return res
     res.raw = p.stdout or ""
     res.returncode = p.returncode
-    res.findings = parse.parse_nmap(res.raw)
+    # Preferimos el XML (estable entre versiones); si falta o no parsea, caemos
+    # al texto normal, que siempre está en stdout o en el .txt.
+    xml_text = ""
+    if xmlfile == "-":
+        xml_text = res.raw
+    elif Path(xmlfile).is_file():
+        xml_text = Path(xmlfile).read_text(encoding="utf-8", errors="replace")
+    res.findings = parse.parse_nmap_xml(xml_text) or parse.parse_nmap(res.raw)
     return res
 
 

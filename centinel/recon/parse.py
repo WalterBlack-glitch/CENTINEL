@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import xml.etree.ElementTree as ET
 
 from .model import Finding
 
@@ -36,6 +37,48 @@ def parse_nmap(text: str, *, only_open: bool = True) -> list[Finding]:
             state=state,
             service=(m.group("service") or "").lower(),
             version=(m.group("version") or "").strip(),
+        ))
+    return out
+
+
+def parse_nmap_xml(text, *, only_open=True):
+    """Extrae puertos de la salida XML de nmap (`-oX`). Puro.
+
+    El XML es el formato estable: no se rompe cuando cambia el ancho de las
+    columnas entre versiones y trae mas que la tabla de texto (producto,
+    version y extrainfo del servicio por separado, estado y su razon). Se
+    prefiere a `parse_nmap` siempre que nmap haya podido escribirlo.
+    """
+    if not text or not text.strip():
+        return []
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return []
+    out = []
+    for port in root.iter("port"):
+        st = port.find("state")
+        state = (st.get("state") if st is not None else "").lower()
+        if only_open and not state.startswith("open"):
+            continue
+        try:
+            num = int(port.get("portid"))
+        except (TypeError, ValueError):
+            continue
+        svc = port.find("service")
+        service = version = ""
+        if svc is not None:
+            service = (svc.get("name") or "").lower()
+            nombre = " ".join(x for x in (svc.get("product"), svc.get("version")) if x)
+            extra = svc.get("extrainfo")
+            version = (nombre + " (" + extra + ")").strip() if extra else nombre
+        out.append(Finding(
+            kind="port",
+            port=num,
+            proto=(port.get("protocol") or "").lower(),
+            state=state,
+            service=service,
+            version=version,
         ))
     return out
 

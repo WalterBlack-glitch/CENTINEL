@@ -38,18 +38,20 @@ herramienta falta, la función degrada con un mensaje claro (lo reporta `verify`
 - **tui.py** — banner + menú navegable con flechas (fila resaltada, ítems bloqueados atenuados con su motivo) + dispatcher.
 - **__main__.py** — habilita ANSI + fuerza UTF-8 en Windows; también lo llama `--recon`.
 
-## Estado (2026-08-23)
-✅ Menú completo, context-aware real. nmap 4 modos + ffuf dir/sub con parseo y persistencia. Sniffer pasivo + telemetría. Sesiones (new/use/close/list/info) con dedup e historial. Reporte view + export txt/md. Temas en vivo. Preflight.
-✅ **37 tests** (`tests/test_recon_*.py`) de núcleos puros. Suite total de CENTINEL: **322 pasan**.
+## Estado (2026-10-30)
+✅ Menú completo, context-aware real. nmap 4 modos + ffuf dir/sub con parseo y persistencia. Sniffer pasivo + telemetría. Sesiones (new/use/close/list/info) con dedup e historial. Reporte view + export txt/md/**html**. Temas en vivo. Preflight.
+✅ **nmap XML** (`-oX`): `run_nmap` ahora emite XML además del texto y lo prefiere al parsear (estable entre versiones, trae producto/versión/extrainfo del servicio por separado); cae al parseo de texto si el XML falta o no parsea. Sin cambios de menú: el upgrade es transparente.
+✅ **Diff** (`diff.py`, puro): compara dos conjuntos de hallazgos por clave natural (`tipo|puerto|proto|url|fuzz`, nunca el PID) → nuevos / desaparecidos / comunes, con titular al estilo del historial del IDS. El TUI muestra «Desde la corrida anterior: N nuevo(s)» tras cada scan; `diff_findings(a.findings, b.findings)` sirve también para diff entre sesiones.
+✅ **Informe HTML** autocontenido, tema claro/oscuro, reusando el cuidado del IDS: todo valor pasa por `html.escape` porque parte del contenido (versiones de servicio, URLs) lo escribe el objetivo escaneado.
+✅ **60 tests** de recon (`tests/test_recon_*.py`) de núcleos puros + I/O simulado de `run_nmap`. Suite total de CENTINEL: **707 pasan** (1 skip).
 ✅ Integrado en el CLI: `--recon`. Sin tocar el pipeline async del IDS.
 ⚠️ Sin herramientas en el host Windows del usuario: las corridas reales degradan; probar de verdad en Kali/Linux.
 
 ## Pendiente
-1. Parseo nmap **XML** (`-oX`) además de la tabla de texto.
-2. Empaquetar/autodetectar **wordlists** (SecLists).
-3. Sniffer: IPv6 y captura a `.pcap`.
-4. Export **HTML** (reusar patrón del IDS). Diff entre sesiones ("nuevo desde la última corrida").
-5. Puente con el IDS: alimentar hallazgos del recon al event store como contexto.
+1. Empaquetar/autodetectar **wordlists** (SecLists).
+2. Sniffer: IPv6 y captura a `.pcap`.
+3. Diff entre sesiones como **comando del menú** (la lógica pura ya está en `diff.py`; falta la entrada en `context.py` + dispatcher, que se verifica con ojos delante).
+4. Puente con el IDS: alimentar hallazgos del recon al event store como contexto.
 
 ## Seguridad
 Recon para objetivos **autorizados**. El scan sigiloso (-sS) exige root y se

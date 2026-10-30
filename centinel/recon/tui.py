@@ -9,7 +9,7 @@ import os
 import time
 from pathlib import Path
 
-from . import (config, context, history, keys, paths, report, session,
+from . import (config, context, diff, history, keys, paths, report, session,
                telemetry, theme, tools, verify)
 from . import scanner
 from .context import MENU, availability
@@ -104,14 +104,17 @@ def _absorb(st: AppState, res, th) -> None:
         st.runlog.add(f"{res.tool} {res.kind}: ERROR {res.error}")
         return
     st.session.commands.append(" ".join(res.command))
-    new = st.session.add_findings(res.findings)
+    antes = list(st.session.findings)
+    nuevos = st.session.add_findings(res.findings)
     st.persist()
+    d = diff.diff_findings(antes, st.session.findings)
     history.append_history(st.session.name, f"{res.tool} {res.kind}",
-                           f"{len(res.findings)} hallazgos, {new} nuevos")
+                           f"{len(res.findings)} hallazgos, {nuevos} nuevos")
     st.runlog.add(f"{res.tool} {res.kind}: {len(res.findings)} hallazgos "
-                  f"({new} nuevos)")
+                  f"({nuevos} nuevos)")
     print("  " + paint(f"✓ {res.tool} {res.kind}: {len(res.findings)} "
-                       f"hallazgos ({new} nuevos)", th.ok))
+                       f"hallazgos ({nuevos} nuevos)", th.ok))
+    print("  " + paint(diff.headline(d), th.help))
     for f in res.findings[:20]:
         print("    " + _fmt_finding(f))
     if len(res.findings) > 20:

@@ -60,3 +60,16 @@ def test_ffuf_valida_entradas():
         build_ffuf_cmd("dir", "host", "")
     with pytest.raises(ValueError):
         build_ffuf_cmd("nope", "host", "/wl.txt")
+
+
+def test_nmap_xmlfile_se_inserta():
+    cmd = build_nmap_cmd("quick", "host", xmlfile="/tmp/o.xml")
+    assert "-oX" in cmd and "/tmp/o.xml" in cmd
+    # el objetivo va al final, despues de los ficheros de salida
+    assert cmd[-1] == "host"
+
+
+def test_nmap_texto_y_xml_conviven():
+    cmd = build_nmap_cmd("quick", "host", outfile="/tmp/o.txt", xmlfile="-")
+    assert cmd.count("-oN") == 1 and cmd.count("-oX") == 1
+    assert cmd[cmd.index("-oX") + 1] == "-"
