@@ -56,6 +56,11 @@ class Config:
     # --- comportamiento
     auto_scan_seconds: int = 0              # 0 = solo escaneo manual
 
+    # --- IA (explicador local opcional; ver centinel/ai/)
+    explain_model: str = "llama3.2"         # modelo Ollama para --explain
+    explain_url: str = "http://localhost:11434"  # Ollama local (solo loopback)
+    explain_allow_remote: bool = False      # permitir URL no local (privacidad)
+
     # --- meta (no viene del fichero)
     path: str = ""                          # de dónde se cargó ("" = defaults)
     errors: list[str] = field(default_factory=list)
@@ -197,6 +202,11 @@ _SECCIONES = {
     "escaneo": {
         "auto_seconds": ("auto_scan_seconds", _as_int),
     },
+    "ia": {
+        "modelo": ("explain_model", _as_str),
+        "url": ("explain_url", _as_str),
+        "allow_remote": ("explain_allow_remote", _as_bool),
+    },
 }
 
 
@@ -297,6 +307,13 @@ dir = "."
 
 [escaneo]
 auto_seconds = 0           # 0 = solo cuando pulsas Reescanear
+
+[ia]
+# Explicador de alertas con un LLM local (Ollama). OPCIONAL y apagado hasta
+# que uses --explain. Todo offline: nunca sale de tu máquina.
+modelo = "llama3.2"                  # modelo Ollama a usar
+url = "http://localhost:11434"       # Ollama local (por privacidad, solo loopback)
+allow_remote = false                 # true = permitir una URL no local (bajo tu riesgo)
 """
 
 

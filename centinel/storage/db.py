@@ -33,7 +33,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-from ..core import ThreatEvent
+from ..core import ThreatEvent, Severity
 from ..keyring import load_or_create_key
 
 _SCHEMA = """
@@ -276,6 +276,36 @@ class EventStore:
         actors = [dict(zip([d[0] for d in ac.description], r)) for r in ac.fetchall()]
         return {"since": since_ts, "total": total, "severity": sev,
                 "kinds": kinds, "actors": actors}
+
+    def recent(self, limit: int = 10,
+               min_severity: int = 0) -> list[ThreatEvent]:
+        """Últimos eventos (por id desc) como ThreatEvent. Solo lectura.
+
+        Reconstruye el evento desde la fila almacenada; útil para capas de
+        presentación/IA que necesitan el evento completo, no un agregado."""
+        self._flush()
+        cur = self._conn.execute(
+            "SELECT ts,source,kind,src_ip,dst_ip,src_port,dst_port,mac,user,"
+            "severity,score,message,enrichment,tags,raw FROM events "
+            "WHERE severity >= ? ORDER BY id DESC LIMIT ?",
+            (int(min_severity), int(limit)))
+        out: list[ThreatEvent] = []
+        for r in cur.fetchall():
+            try:
+                enr = json.loads(r[12]) if r[12] else {}
+            except (ValueError, TypeError):
+                enr = {}
+            try:
+                tags = set(json.loads(r[13])) if r[13] else set()
+            except (ValueError, TypeError):
+                tags = set()
+            out.append(ThreatEvent(
+                ts=r[0], source=r[1] or "", kind=r[2] or "",
+                src_ip=r[3], dst_ip=r[4], src_port=r[5], dst_port=r[6],
+                mac=r[7], user=r[8], severity=Severity(min(int(r[9] or 0), 4)),
+                score=r[10] or 0.0, message=r[11] or "",
+                enrichment=enr, tags=tags, raw=r[14] or ""))
+        return out
 
     def close(self) -> None:
         try:

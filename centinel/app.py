@@ -512,6 +512,19 @@ def main() -> None:
     p.add_argument("--verify-log", action="store_true",
                    help="verifica la cadena tamper-evident de la BD (¿alguien "
                         "editó/borró eventos?) y sale. Código de salida 0=intacta.")
+    p.add_argument("--explain", action="store_true",
+                   help="explica en lenguaje natural (español) las alertas "
+                        "recientes del event store usando un LLM LOCAL (Ollama). "
+                        "Opcional y offline: si no hay Ollama, degrada a un "
+                        "resumen local. Solo lectura; sale al terminar.")
+    p.add_argument("--explain-limit", type=int, default=10,
+                   help="cuántas alertas recientes explicar con --explain")
+    p.add_argument("--explain-model", default=None,
+                   help="modelo Ollama para --explain (si no, el de centinel.toml "
+                        "o 'llama3.2')")
+    p.add_argument("--explain-url", default=None,
+                   help="URL del Ollama local para --explain (por defecto "
+                        "http://localhost:11434; solo loopback salvo config)")
     args = p.parse_args()
     if args.simulate and args.respond_live:
         p.error("--respond-live no se permite con --simulate "
@@ -534,6 +547,17 @@ def main() -> None:
         ok, text = verify_log(safe_path(args.db))
         print(text)
         sys.exit(0 if ok else 2)
+
+    if args.explain:
+        from .ai.cli import explain_report
+        from .config import load_config
+        cfg = load_config()
+        model = args.explain_model or cfg.explain_model
+        url = args.explain_url or cfg.explain_url
+        print(explain_report(safe_path(args.db), model=model, url=url,
+                             allow_remote=cfg.explain_allow_remote,
+                             limit=args.explain_limit))
+        sys.exit(0)
 
     if args.watchdog:
         from .watchdog import run as watchdog_run

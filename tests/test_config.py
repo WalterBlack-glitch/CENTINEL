@@ -122,8 +122,22 @@ auto_seconds = 300
         assert cfg.min_severity == int(Severity.LOW)
 
     def test_ejemplo_documenta_todas_las_secciones(self):
-        for seccion in ("[deteccion]", "[historial]", "[informe]", "[escaneo]"):
+        for seccion in ("[deteccion]", "[historial]", "[informe]", "[escaneo]",
+                        "[ia]"):
             assert seccion in EJEMPLO
+
+    def test_lee_seccion_ia(self, tmp_path):
+        p = escribe(tmp_path, """
+[ia]
+modelo = "mistral"
+url = "http://localhost:11434"
+allow_remote = true
+""")
+        cfg = load_config(p)
+        assert cfg.errors == []
+        assert cfg.explain_model == "mistral"
+        assert cfg.explain_url == "http://localhost:11434"
+        assert cfg.explain_allow_remote is True
 
     def test_toml_roto_degrada_con_aviso(self, tmp_path):
         cfg = load_config(escribe(tmp_path, "[deteccion\nmin_severity = "))

@@ -37,7 +37,16 @@ Estado: app de escritorio tkinter (0 deps) + `procwatch` (detección de suplanta
 - **Living-off-the-land**: binarios legítimos (powershell, mshta, rundll32) usados con intención maliciosa. Futuro: reglas sobre líneas de comando sospechosas.
 
 ### La IA a nuestro favor (clave: **local y opcional**, fiel al 0-deps / privacidad)
-1. **Explicador de hallazgos con LLM local (Ollama).** Botón "explicar" que traduce un evento técnico a lenguaje claro: "este proceso dice ser svchost pero corre desde tu carpeta de Descargas y no está firmado — típico de un troyano". Todo offline, sin mandar tus procesos a ninguna nube. Módulo enchufable; si no hay Ollama, CENTINEL funciona igual.
+1. ✅ **Explicador de hallazgos con LLM local (Ollama).** [HECHO] `centinel/ai/`
+   traduce un `ThreatEvent` (o un lote) a lenguaje claro: "este proceso dice ser
+   svchost pero corre desde tu carpeta de Descargas y no está firmado — típico
+   de un troyano". Todo offline (solo loopback, `urllib` de la estándar, 0 deps),
+   sin mandar tus procesos a ninguna nube. Lógica pura (`build_prompt`,
+   `template_summary`, `parse_response`) separada de la capa de red
+   (`OllamaExplainer`); contenido hostil saneado y envuelto en un bloque de DATOS
+   que el modelo no debe obedecer; degrada a un resumen-plantilla local si no hay
+   Ollama. Se expone con `centinel --explain` (apagado por defecto). Modelo/URL
+   configurables en `[ia]` de `centinel.toml`. 23 tests.
 2. **Triaje / reducción de falsos positivos.** El LLM prioriza y agrupa: "3 de estas 5 alertas son la misma app portable legítima; céntrate en la primera".
 3. **Consulta en lenguaje natural** sobre los eventos: "¿qué proceso nuevo apareció y toca la red?" en vez de leer tablas.
 4. **Sugerencia de reglas.** A partir de un binario sospechoso, el LLM propone una regla YARA-like o un patrón de línea de comando que luego un humano revisa antes de activar (nunca auto-aplicar).
@@ -62,8 +71,6 @@ Firma Authenticode (#1) → linaje (#2) → ruta canónica (#3) → historial/di
   `auto_seconds` y la ventana ya reescanea sola; falta el icono en la bandeja y
   la notificación nativa. No se hizo aquí porque no hay forma de verificarlo sin
   ojos humanos delante.
-- **IA #1 Explicador con LLM local (Ollama).** Los `reasons` de cada evento ya
-  son el material de entrada; el módulo enchufable sigue sin escribir.
 - **#9 Empaquetado `.exe` con PyInstaller.** Requiere ejecutar el empaquetador y
   probar el binario a mano.
 - **Vectores de persistencia exóticos** (WMI, COM hijacking, IFEO, AppInit_DLLs),
