@@ -523,10 +523,14 @@ veces: sin ningún extra (verifica las 0 dependencias obligatorias) y con
 
 | Documento | Contenido |
 |---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Mapa completo: las tres caras, el pipeline, convenciones y los 84 módulos |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Puesta en marcha, tests, convenciones y cómo añadir una fuente |
+| [RECON.md](RECON.md) | Modo RECON: reconocimiento de objetivos autorizados (nmap/ffuf/sniffer) |
 | [CHANGELOG.md](CHANGELOG.md) | Historial de cambios por versión (SemVer) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Plan de versiones v0.3 → v1.0 |
 | [docs/AUDIT.md](docs/AUDIT.md) | Auditoría técnica: fortalezas, deuda y prioridades |
 | [docs/DEFENSA_IA.md](docs/DEFENSA_IA.md) | Defensa contra hacking asistido por IA |
+| [docs/DEFENSA_PERSONAL.md](docs/DEFENSA_PERSONAL.md) | Estrategia contra amenazas residentes desconocidas (unknown-unknowns) |
 | [SECURITY_AUDIT.md](SECURITY_AUDIT.md) | Auditoría de seguridad del propio código (13 hallazgos) |
 | [AUDIT_HONEYPOT.md](AUDIT_HONEYPOT.md) | Endurecimiento del honeypot |
 | [AUDIT_AI_DEFENSE.md](AUDIT_AI_DEFENSE.md) | Revisión de la capa anti-IA |
