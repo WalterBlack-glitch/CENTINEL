@@ -506,6 +506,10 @@ def main() -> None:
                    help="abre el modo RECON: TUI de reconocimiento de un objetivo "
                         "autorizado (nmap/ffuf/sniffer pasivo) con sesiones, "
                         "reporte e historial. Complemento ofensivo del IDS.")
+    p.add_argument("--to-store", action="store_true",
+                   help="con --recon: OPT-IN, vuelca los hallazgos de recon al "
+                        "event store firmado (--db) para que entren en la misma "
+                        "línea de tiempo/correlación del IDS. Apagado por defecto.")
     p.add_argument("--report", action="store_true",
                    help="imprime un informe forense del event store (resumen de "
                         "eventos, severidad, TTPs, actores e integridad) y sale.")
@@ -519,7 +523,9 @@ def main() -> None:
     if args.recon:
         # Modo recon: TUI interactiva independiente del pipeline async del IDS.
         from .recon.__main__ import main as recon_main
-        sys.exit(recon_main())
+        sys.exit(recon_main(to_store=args.to_store,
+                            db_path=safe_path(args.db) if args.to_store
+                            else args.db))
 
     from .doctor import run as doctor_run, has_blocking_errors
     from .feedback import write_report

@@ -24,12 +24,30 @@ def _force_utf8() -> None:
             pass
 
 
-def main() -> int:
+def _parse(argv):
+    import argparse
+    p = argparse.ArgumentParser(prog="centinel.recon", add_help=True)
+    p.add_argument("--to-store", action="store_true",
+                   help="OPT-IN: vuelca los hallazgos de recon al event store "
+                        "firmado del IDS (misma línea de tiempo/correlación). "
+                        "Apagado por defecto.")
+    p.add_argument("--db", default="centinel.db",
+                   help="ruta del event store al que volcar con --to-store")
+    return p.parse_args(argv)
+
+
+def main(argv=None, *, to_store=None, db_path=None) -> int:
     _enable_ansi_on_windows()
     _force_utf8()
+    # Si app.py ya resolvió el flag, úsalo tal cual; si no, parsea argv (entrada
+    # autónoma `python -m centinel.recon`).
+    if to_store is None:
+        ns = _parse(argv)
+        to_store = ns.to_store
+        db_path = ns.db
     from .tui import run
     try:
-        return run()
+        return run(to_store=bool(to_store), db_path=db_path or "centinel.db")
     except KeyboardInterrupt:
         print("\nInterrumpido.")
         return 130

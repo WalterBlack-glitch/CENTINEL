@@ -26,6 +26,9 @@ class AppState:
     last_capture: dict | None = None
     root: bool = field(default_factory=tools.is_root)
     tool_status: dict = field(default_factory=tools.tool_status)
+    # Puente opt-in al event store firmado del IDS (apagado por defecto).
+    to_store: bool = False
+    db_path: str = "centinel.db"
 
     # --- sesión ---
     def use_session(self, s: sess.Session, *, named: bool = True) -> None:

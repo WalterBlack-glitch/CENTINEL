@@ -64,6 +64,9 @@ def render(st: AppState, cursor: int) -> None:
     print("  " + paint(f"objetivo → {tgt}    sesión → {st.session.name}"
                        f"{'' if st.is_named else ' (efímera)'}", th.dim))
     print("  " + paint(f"resultados → {rdir}", th.dim))
+    if st.to_store:
+        print("  " + paint(f"event store → {st.db_path} (hallazgos a la línea "
+                           f"de tiempo del IDS)", th.dim))
     print()
 
     idx = 0
@@ -115,10 +118,27 @@ def _absorb(st: AppState, res, th) -> None:
     print("  " + paint(f"✓ {res.tool} {res.kind}: {len(res.findings)} "
                        f"hallazgos ({nuevos} nuevos)", th.ok))
     print("  " + paint(diff.headline(d), th.help))
+    if st.to_store and d.nuevos:
+        _push_to_store(st, res, d.nuevos, th)
     for f in res.findings[:20]:
         print("    " + _fmt_finding(f))
     if len(res.findings) > 20:
         print(paint(f"    … y {len(res.findings) - 20} más (view)", th.dim))
+
+
+def _push_to_store(st: AppState, res, nuevos, th) -> None:
+    """Empuja los hallazgos nuevos al event store firmado. Nunca tumba el recon."""
+    from . import bridge
+    r = bridge.persist_findings(
+        nuevos, target=st.session.target, tool=res.tool, scan_kind=res.kind,
+        ts=res.ts or time.time(), db_path=st.db_path, log=st.runlog.add)
+    if r["ok"]:
+        st.runlog.add(f"store: +{r['saved']} eventos → {st.db_path}")
+        print("  " + paint(f"→ {r['saved']} hallazgos al event store "
+                           f"({st.db_path})", th.help))
+    else:
+        print("  " + paint(f"! no se escribió en el store: {r['error']}",
+                           th.warn))
 
 
 def _fmt_finding(f: Finding) -> str:
@@ -381,10 +401,10 @@ DISPATCH = {
 # Bucle principal
 # --------------------------------------------------------------------------
 
-def run() -> int:
+def run(to_store: bool = False, db_path: str = "centinel.db") -> int:
     paths.ensure_dirs()
     cfg = config.load()
-    st = AppState(cfg=cfg)
+    st = AppState(cfg=cfg, to_store=bool(to_store), db_path=db_path or "centinel.db")
     # Reactivar última sesión si existe.
     if cfg.last_session and session.exists(cfg.last_session):
         s = session.load(cfg.last_session)
