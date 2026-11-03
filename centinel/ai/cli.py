@@ -7,17 +7,9 @@ degrada al resumen-plantilla local — nunca falla ni bloquea.
 from __future__ import annotations
 
 from ..core import Severity
-from .explainer import OllamaExplainer, template_summary
+from .explainer import OllamaExplainer, _sev_label, template_summary
 
 _RULE = "─" * 62
-_SEV = ("INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
-
-
-def _sev_label(ev) -> str:
-    try:
-        return _SEV[min(int(ev.severity), 4)]
-    except (TypeError, ValueError):
-        return "INFO"
 
 
 def explain_report(db_path: str, *, model: str, url: str, timeout: float = 20.0,
@@ -35,13 +27,18 @@ def explain_report(db_path: str, *, model: str, url: str, timeout: float = 20.0,
     L = [_RULE, "  CENTINEL · explicador de alertas (IA local)", _RULE]
     expl = OllamaExplainer(model=model, url=url, timeout=timeout,
                            allow_remote=allow_remote)
-    if not expl.available():
+    enabled = expl.available()
+    if not enabled:
         L.append(f"  [!] {expl.reason}")
         L.append("      Se usa el resumen-plantilla local en su lugar.")
-    elif not events:
-        L.append("  (no hay alertas que explicar con ese umbral)")
-        L.append(_RULE)
-        return "\n".join(L)
+    else:
+        # El loopback no autentica quién escucha: si el puerto lo tiene otro
+        # usuario, no le mandamos los datos del store (ver peer_trusted).
+        ok, motivo = expl.peer_trusted()
+        if not ok:
+            enabled = False
+            L.append(f"  [!] {motivo}")
+            L.append("      Se usa el resumen-plantilla local en su lugar.")
 
     if not events:
         L.append("")
@@ -49,24 +46,27 @@ def explain_report(db_path: str, *, model: str, url: str, timeout: float = 20.0,
         L.append(_RULE)
         return "\n".join(L)
 
-    # Un aviso si Ollama está desactivado o no responde en el primero: evita
-    # repetir el motivo en cada alerta.
-    degradado = not expl.available()
+    degradado = False
     for i, ev in enumerate(events, 1):
-        texto = expl.explain(ev) if expl.available() else None
-        if texto is None:
-            texto = template_summary(ev)
-            if expl.available():
+        if enabled:
+            texto = expl.explain(ev)
+            if texto is None:
+                # Primera falla de Ollama: dejamos de intentar y plantilleamos el
+                # resto, para no esperar limit×timeout (nunca bloquea de más).
+                enabled = False
                 degradado = True
+                texto = template_summary(ev)
+        else:
+            texto = template_summary(ev)
         L.append("")
         L.append(f"  [{i}] {_sev_label(ev)} · {ev.kind or 'evento'}")
         for linea in texto.splitlines() or [texto]:
             L.append(f"      {linea}")
 
-    if degradado and expl.available():
+    if degradado:
         L.append("")
-        L.append("  [i] Ollama no respondió para alguna alerta; se mostró el "
-                 "resumen-plantilla local.")
+        L.append("  [i] Ollama no respondió; se mostró el resumen-plantilla "
+                 "local para el resto.")
         L.append(f"      (modelo '{expl.model}' en {expl.url} — "
                  "¿está corriendo `ollama serve`?)")
     L.append(_RULE)

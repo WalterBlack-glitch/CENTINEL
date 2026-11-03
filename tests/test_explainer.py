@@ -20,6 +20,7 @@ from centinel.ai.explainer import (
     parse_response,
     is_local_url,
     event_facts,
+    sanitize_output,
     _clean,
 )
 
@@ -46,6 +47,17 @@ def _fake_urlopen(body, *, status=200):
         return resp
 
     return _open
+
+
+def _patch_open(monkeypatch, open_fn):
+    """Hace que OllamaExplainer use `open_fn` como transporte. `_post` ahora va
+    por `self._opener.open(...)` (un opener que salta el proxy para loopback),
+    así que parcheamos `build_opener` para devolver un opener falso."""
+    class _FakeOpener:
+        open = staticmethod(open_fn)
+
+    monkeypatch.setattr("centinel.ai.explainer.urllib.request.build_opener",
+                        lambda *a, **k: _FakeOpener())
 
 
 def _ev_bruteforce():
@@ -179,7 +191,7 @@ def test_parse_response_basura_devuelve_none():
 def test_explain_con_http_mockeado(monkeypatch):
     body = json.dumps({"response": "Un atacante probó muchas claves SSH."})
     fake = _fake_urlopen(body)
-    monkeypatch.setattr("centinel.ai.explainer.urllib.request.urlopen", fake)
+    _patch_open(monkeypatch, fake)
     ex = OllamaExplainer(model="llama3.2", url="http://localhost:11434")
     out = ex.explain(_ev_bruteforce())
     assert out == "Un atacante probó muchas claves SSH."
@@ -193,8 +205,7 @@ def test_explain_con_http_mockeado(monkeypatch):
 
 def test_explain_batch_con_http_mockeado(monkeypatch):
     body = json.dumps({"response": "Las dos alertas son el mismo escáner."})
-    monkeypatch.setattr("centinel.ai.explainer.urllib.request.urlopen",
-                        _fake_urlopen(body))
+    _patch_open(monkeypatch, _fake_urlopen(body))
     ex = OllamaExplainer()
     out = ex.explain_batch([_ev_bruteforce(), _ev_portscan()])
     assert "mismo escáner" in out
@@ -204,7 +215,7 @@ def test_explain_batch_con_http_mockeado(monkeypatch):
 def test_degrada_cuando_ollama_no_responde(monkeypatch):
     def _boom(req, timeout=None):
         raise urllib.error.URLError("connection refused")
-    monkeypatch.setattr("centinel.ai.explainer.urllib.request.urlopen", _boom)
+    _patch_open(monkeypatch, _boom)
     ex = OllamaExplainer()
     assert ex.explain(_ev_bruteforce()) is None
     # explain_or_template nunca devuelve None
@@ -215,13 +226,12 @@ def test_degrada_cuando_ollama_no_responde(monkeypatch):
 def test_degrada_en_timeout(monkeypatch):
     def _timeout(req, timeout=None):
         raise TimeoutError("timed out")
-    monkeypatch.setattr("centinel.ai.explainer.urllib.request.urlopen", _timeout)
+    _patch_open(monkeypatch, _timeout)
     assert OllamaExplainer().explain(_ev_portscan()) is None
 
 
 def test_degrada_con_respuesta_corrupta(monkeypatch):
-    monkeypatch.setattr("centinel.ai.explainer.urllib.request.urlopen",
-                        _fake_urlopen("}{ no json"))
+    _patch_open(monkeypatch, _fake_urlopen("}{ no json"))
     assert OllamaExplainer().explain(_ev_bruteforce()) is None
 
 
@@ -244,7 +254,7 @@ def test_url_no_local_desactiva_por_defecto(monkeypatch):
     def _spy(req, timeout=None):
         called["n"] += 1
         raise AssertionError("no debería llamarse a una URL remota")
-    monkeypatch.setattr("centinel.ai.explainer.urllib.request.urlopen", _spy)
+    _patch_open(monkeypatch, _spy)
     ex = OllamaExplainer(url="http://evil.example.com:11434")
     assert ex.available() is False
     assert ex.reason
@@ -254,8 +264,45 @@ def test_url_no_local_desactiva_por_defecto(monkeypatch):
 
 def test_url_no_local_con_allow_remote(monkeypatch):
     body = json.dumps({"response": "remoto ok"})
-    monkeypatch.setattr("centinel.ai.explainer.urllib.request.urlopen",
-                        _fake_urlopen(body))
+    _patch_open(monkeypatch, _fake_urlopen(body))
     ex = OllamaExplainer(url="http://192.168.1.50:11434", allow_remote=True)
     assert ex.available() is True
     assert ex.explain(_ev_bruteforce()) == "remoto ok"
+
+
+# ----- saneo de la salida del modelo (contenido hostil / endpoint no confiable)
+def test_sanitize_output_quita_ansi_y_control():
+    sucio = "linea1\x1b[31mROJO\x1b[0m\x07\n\x1b]0;titulo\x07linea2"
+    limpio = sanitize_output(sucio)
+    assert "\x1b" not in limpio and "\x07" not in limpio
+    assert "ROJO" in limpio
+    # CSI fuera, OSC (título) eliminado entero, y se conserva el salto de línea.
+    assert limpio.split("\n") == ["linea1ROJO", "linea2"]
+
+
+def test_parse_response_sanea_la_salida():
+    # Un endpoint (o un modelo steereado) devuelve ANSI/control: no debe llegar
+    # crudo a la terminal.
+    raw = json.dumps({"response": "hola\x1b[2J\x1b[31m mundo\x07"})
+    out = parse_response(raw)
+    assert "\x1b" not in out and "\x07" not in out and "mundo" in out
+
+
+# ----- privacidad: el puerto loopback no autentica a quién escucha
+def test_peer_no_confiable_niega(monkeypatch):
+    import centinel.ai.explainer as _ex
+    monkeypatch.setattr(_ex, "_listening_uid", lambda port: 1000)
+    monkeypatch.setattr(_ex.os, "getuid", lambda: 0, raising=False)
+    ok, motivo = _ex._peer_is_trusted("http://localhost:11434")
+    assert ok is False and "11434" in motivo
+
+
+def test_peer_confiable_si_es_tuyo_o_root(monkeypatch):
+    import centinel.ai.explainer as _ex
+    monkeypatch.setattr(_ex.os, "getuid", lambda: 4242, raising=False)
+    monkeypatch.setattr(_ex, "_listening_uid", lambda port: 4242)
+    assert _ex._peer_is_trusted("http://127.0.0.1:11434")[0] is True
+    monkeypatch.setattr(_ex, "_listening_uid", lambda port: 0)   # root
+    assert _ex._peer_is_trusted("http://127.0.0.1:11434")[0] is True
+    monkeypatch.setattr(_ex, "_listening_uid", lambda port: None)  # nadie/indet.
+    assert _ex._peer_is_trusted("http://127.0.0.1:11434")[0] is True

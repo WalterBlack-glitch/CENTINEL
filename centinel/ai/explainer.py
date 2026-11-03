@@ -24,8 +24,10 @@ Principios (los mismos del resto del repo):
 """
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
+import os
 import re
 import urllib.error
 import urllib.parse
@@ -44,6 +46,9 @@ _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", ""}
 # Saneo de contenido hostil: fuera caracteres de control y ANSI; una sola línea.
 _CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+# OSC: `ESC ] ... (BEL | ST)`, p.ej. OSC-52 (escribir en el portapapeles). Se
+# elimina la secuencia ENTERA, incluida su carga, por si acaba sin terminador.
+_OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?")
 
 
 # ----------------------------------------------------------------- saneo puro
@@ -66,6 +71,23 @@ def _clean(value, max_len: int = 200) -> str:
     if len(s) > max_len:
         s = s[:max_len] + "…"
     return s
+
+
+def sanitize_output(text: str) -> str:
+    """Limpia el texto que DEVUELVE el modelo antes de imprimirlo. Puro.
+
+    La respuesta llega de un endpoint que puede estar steereado por campos del
+    evento (controlados en parte por el atacante) o, con allow_remote, ser
+    remoto. Quita ANSI y caracteres de control (que podrían ocultar líneas,
+    falsificar la explicación o escribir en el portapapeles con OSC-52), pero
+    CONSERVA los saltos de línea para no aplastar las 2-4 frases en una."""
+    if not text:
+        return text
+    text = _ANSI.sub("", text)
+    text = _OSC.sub("", text)            # fuera OSC (p.ej. OSC-52 portapapeles)
+    text = _CTRL.sub(" ", text)          # control salvo \t y \n (ver _CTRL)
+    text = text.replace("\r", " ").replace("\t", " ")
+    return "\n".join(line.rstrip() for line in text.split("\n")).strip()
 
 
 # ------------------------------------------------------- extracción de hechos
@@ -211,7 +233,7 @@ def parse_response(raw) -> str | None:
             texto = msg.get("content")
     if not isinstance(texto, str):
         return None
-    texto = texto.strip()
+    texto = sanitize_output(texto)       # texto hostil: fuera ANSI/control
     return texto or None
 
 
@@ -240,6 +262,49 @@ def is_local_url(url: str) -> bool:
         return False
 
 
+def _listening_uid(port: int) -> int | None:
+    """UID del proceso que ESCUCHA en loopback:`port`, o None si no se puede
+    determinar (p.ej. no es Linux, o nadie escucha aún). Best-effort, leyendo
+    /proc/net/tcp{,6}. Solo se usa para NEGAR cuando el dueño es un tercero."""
+    for proc in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(proc, encoding="ascii", errors="replace") as fh:
+                next(fh, None)                      # cabecera
+                for line in fh:
+                    parts = line.split()
+                    if len(parts) < 8 or parts[3] != "0A":   # 0A = LISTEN
+                        continue
+                    try:
+                        if int(parts[1].rsplit(":", 1)[1], 16) == port:
+                            return int(parts[7])    # columna uid
+                    except (ValueError, IndexError):
+                        continue
+        except OSError:
+            continue
+    return None
+
+
+def _peer_is_trusted(url: str) -> tuple[bool, str]:
+    """(ok, motivo). Solo NIEGA si identifica que el puerto loopback lo posee
+    OTRO usuario (ni root ni el actual): en un host multiusuario un no
+    privilegiado podría levantar un Ollama falso y quedarse con datos del store
+    (0600) o devolver una explicación falsa. Si no se puede determinar (no
+    Linux, o nadie escucha), no bloquea: el fallo de conexión ya degrada."""
+    if not hasattr(os, "getuid"):
+        return True, ""                             # Windows: no aplica 0600/root
+    try:
+        u = urllib.parse.urlparse(url)
+        port = u.port or (443 if u.scheme == "https" else 80)
+    except ValueError:
+        return True, ""
+    uid = _listening_uid(int(port))
+    if uid is None or uid in (0, os.getuid()):
+        return True, ""
+    return False, (f"el puerto local {port} lo tiene abierto el UID {uid} "
+                   f"(ni root ni tú): posible Ollama suplantado, NO se envían "
+                   "datos del store")
+
+
 # ------------------------------------------------------------- capa de I/O
 class OllamaExplainer:
     """Capa delgada que habla con un Ollama local. Degrada sin tumbar.
@@ -265,11 +330,27 @@ class OllamaExplainer:
             self._enabled = False
         else:
             self._enabled = True
+        # Para una URL local saltamos los proxies del entorno (HTTP_PROXY/etc.):
+        # si no, en una máquina con proxy corporativo la petición a localhost
+        # saldría por el proxy y filtraría los datos del evento. Privacidad.
+        if is_local_url(self.url):
+            self._opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({}))
+        else:
+            self._opener = urllib.request.build_opener()
 
     def available(self) -> bool:
         """True si la URL es usable. No comprueba que Ollama responda (eso lo
         resuelve el degradado de `explain`)."""
         return self._enabled
+
+    def peer_trusted(self) -> tuple[bool, str]:
+        """(ok, motivo) sobre el dueño del endpoint loopback. Solo aplica a URL
+        local (con allow_remote el usuario ya aceptó salida externa). No bloquea
+        si no se puede determinar. Pensado para llamarse ANTES de enviar datos."""
+        if not self._enabled or self.allow_remote or not is_local_url(self.url):
+            return True, ""
+        return _peer_is_trusted(self.url)
 
     # -- HTTP crudo (lo único que toca la red) --
     def _post(self, prompt: str) -> str | None:
@@ -283,10 +364,12 @@ class OllamaExplainer:
                 f"{self.url}/api/generate", data=body, method="POST",
                 headers={"Content-Type": "application/json",
                          "User-Agent": "CENTINEL/1.0"})
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            with self._opener.open(req, timeout=self.timeout) as r:
                 return r.read().decode("utf-8", "replace")
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
-            # Ollama no instalado/corriendo, timeout, puerto cerrado, etc.
+        except (urllib.error.URLError, http.client.HTTPException,
+                TimeoutError, OSError, ValueError):
+            # Ollama no instalado/corriendo, timeout, puerto cerrado, respuesta
+            # que no es HTTP (BadStatusLine/IncompleteRead), etc. Nunca lanza.
             return None
 
     # -- API pública --

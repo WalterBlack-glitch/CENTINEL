@@ -529,6 +529,10 @@ def main() -> None:
     if args.simulate and args.respond_live:
         p.error("--respond-live no se permite con --simulate "
                 "(evita bloquear IPs reales con tráfico ficticio)")
+    if args.explain_limit < 1:
+        # Un LIMIT negativo en SQLite significa «sin límite»: pediría TODO el
+        # store y lo mandaría entero al LLM. Lo cortamos aquí.
+        p.error("--explain-limit debe ser >= 1")
     if args.recon:
         # Modo recon: TUI interactiva independiente del pipeline async del IDS.
         from .recon.__main__ import main as recon_main
@@ -550,10 +554,23 @@ def main() -> None:
 
     if args.explain:
         from .ai.cli import explain_report
+        from .ai.explainer import is_local_url
         from .config import load_config
         cfg = load_config()
+        # No tragar en silencio problemas del [ia] (clave mal escrita, booleano
+        # como cadena, Python 3.10 sin tomllib): se verían como «usa el modelo
+        # por defecto sin explicar por qué». Igual que hace desktop.py.
+        for e in cfg.errors:
+            print(f"[config] {e}", file=sys.stderr)
         model = args.explain_model or cfg.explain_model
         url = args.explain_url or cfg.explain_url
+        # Un centinel.toml en el CWD (que otro usuario puede haber dejado) puede
+        # activar allow_remote y una URL externa. Si vamos a sacar datos del
+        # store fuera de la máquina, que se vea de dónde salió el ajuste.
+        if cfg.explain_allow_remote and not is_local_url(url):
+            print(f"[privacidad] --explain enviará datos del store a una URL NO "
+                  f"local ({url}), habilitado por la config en "
+                  f"{cfg.path or 'valores por defecto'}.", file=sys.stderr)
         print(explain_report(safe_path(args.db), model=model, url=url,
                              allow_remote=cfg.explain_allow_remote,
                              limit=args.explain_limit))
