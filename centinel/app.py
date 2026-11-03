@@ -508,8 +508,9 @@ def main() -> None:
                         "reporte e historial. Complemento ofensivo del IDS.")
     p.add_argument("--to-store", action="store_true",
                    help="con --recon: OPT-IN, vuelca los hallazgos de recon al "
-                        "event store firmado (--db) para que entren en la misma "
-                        "línea de tiempo/correlación del IDS. Apagado por defecto.")
+                        "event store firmado (--db) para que queden en la misma "
+                        "línea de tiempo forense del IDS (consulta/--report; aún "
+                        "no se correlacionan). Apagado por defecto.")
     p.add_argument("--report", action="store_true",
                    help="imprime un informe forense del event store (resumen de "
                         "eventos, severidad, TTPs, actores e integridad) y sale.")

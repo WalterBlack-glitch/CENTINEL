@@ -84,7 +84,12 @@ class EventStore:
         # M-5: el .db contiene IPs/usuarios/logs sensibles -> no world-readable.
         old = os.umask(0o077)
         try:
-            self._conn = sqlite3.connect(self.path, check_same_thread=False)
+            # isolation_level=None -> control de transacciones explícito: cada
+            # lote abre su propio `BEGIN IMMEDIATE` (ver _insert), para que
+            # varios procesos escritores (daemon vivo + `--recon --to-store`)
+            # compartan la MISMA cadena sin bifurcarla.
+            self._conn = sqlite3.connect(self.path, check_same_thread=False,
+                                         isolation_level=None)
         finally:
             os.umask(old)
         try:
@@ -136,6 +141,28 @@ class EventStore:
             await asyncio.get_event_loop().run_in_executor(None, self._insert, ev)
 
     def _insert(self, ev: ThreatEvent) -> None:
+        if self._pending == 0:
+            # Toma el lock de escritura ANTES de leer la cabeza de la cadena y
+            # reléela ya comprometida: si otro proceso (daemon vivo, o
+            # `--recon --to-store`) escribió en la misma BD, encadenamos sobre
+            # SU última fila en vez de sobre una cabeza en memoria desfasada
+            # (eso bifurcaba la cadena y hacía que verify_chain reportara
+            # manipulación falsa). SQLite serializa a los escritores: el resto
+            # espera a nuestro commit (busy_timeout por defecto 5 s).
+            self._conn.execute("BEGIN IMMEDIATE")
+            self._last_hash = self._load_head()
+        self._write_row(ev)
+        # M-5: commit por lote (N inserts o cada flush_secs) en vez de por
+        # evento, evita el vector de DoS de I/O bajo flood.
+        self._pending += 1
+        now = time.monotonic()
+        if (self._pending >= self._commit_every
+                or now - self._last_commit >= self._flush_secs):
+            self._flush()
+
+    def _write_row(self, ev: ThreatEvent) -> None:
+        """Encadena e inserta UNA fila (dentro de la transacción abierta). Puro
+        I/O: no abre ni cierra transacción, no decide commits."""
         # Normaliza floats para que el valor hasheado == valor almacenado.
         ts = float(ev.ts)
         score = float(ev.score)
@@ -152,19 +179,18 @@ class EventStore:
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (*row, chain))
         self._last_hash = chain
-        # M-5: commit por lote (N inserts o cada flush_secs) en vez de por
-        # evento, evita el vector de DoS de I/O bajo flood.
-        self._pending += 1
-        now = time.monotonic()
-        if (self._pending >= self._commit_every
-                or now - self._last_commit >= self._flush_secs):
-            self._flush()
 
     def _flush(self) -> None:
         if self._pending:
-            self._conn.commit()
+            self._conn.commit()   # cierra el BEGIN IMMEDIATE del lote
             self._pending = 0
             self._last_commit = time.monotonic()
+
+    def flush(self) -> None:
+        """Fuerza el commit del lote pendiente AHORA, propagando el error si el
+        commit falla (a diferencia de `close`, que lo traga). Lo usa el puente
+        de recon para no reportar éxito con eventos sin confirmar en disco."""
+        self._flush()
 
     # ---- verificación de integridad ----
 

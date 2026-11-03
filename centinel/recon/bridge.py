@@ -1,8 +1,10 @@
 """Puente opt-in RECON → event store firmado del IDS.
 
 Permite que los hallazgos de una sesión de recon entren en la MISMA línea de
-tiempo tamper-evident que el resto de eventos del IDS, para correlacionarlos
-junto a la actividad en vivo del host.
+tiempo tamper-evident que el resto de eventos del IDS, para poder consultarlos
+y cruzarlos a mano (p.ej. en `--report`) junto a la actividad en vivo del host.
+Nota: hoy es almacenamiento/línea de tiempo; el `CorrelationEngine` todavía no
+lee estos eventos de vuelta (no re-puntúa ni re-alerta por un hallazgo recon).
 
 Dos capas, separadas a propósito (como el resto del repo):
 
@@ -17,8 +19,8 @@ Dos capas, separadas a propósito (como el resto del repo):
 
 Identidad de un hallazgo = clave natural `tipo|puerto|proto|url|fuzz` (la misma
 de `parse.dedupe` y `diff.key`, nunca un PID ni algo efímero). Se reutiliza para
-deduplicar antes de insertar y se graba en `enrichment["recon_key"]` para que la
-correlación pueda cruzarla.
+deduplicar antes de insertar y se graba en `enrichment["recon_key"]` para poder
+localizar/cruzar el hallazgo en consultas futuras.
 """
 from __future__ import annotations
 
@@ -155,6 +157,9 @@ def persist_events(events: list[ThreatEvent], *, db_path: str = "centinel.db",
                 await store.save(ev)
 
         asyncio.run(_save_all())
+        # Commit AHORA (no al cerrar): si el commit por lote falla, queremos
+        # enterarnos y reportar ok=False, no tragarlo en close() y mentir éxito.
+        store.flush()
         out["saved"] = len(events)
         out["head"] = store.head_hash()
         out["ok"] = True

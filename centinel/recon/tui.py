@@ -118,27 +118,40 @@ def _absorb(st: AppState, res, th) -> None:
     print("  " + paint(f"✓ {res.tool} {res.kind}: {len(res.findings)} "
                        f"hallazgos ({nuevos} nuevos)", th.ok))
     print("  " + paint(diff.headline(d), th.help))
-    if st.to_store and d.nuevos:
-        _push_to_store(st, res, d.nuevos, th)
+    if st.to_store:
+        _push_to_store(st, res, th)
     for f in res.findings[:20]:
         print("    " + _fmt_finding(f))
     if len(res.findings) > 20:
         print(paint(f"    … y {len(res.findings) - 20} más (view)", th.dim))
 
 
-def _push_to_store(st: AppState, res, nuevos, th) -> None:
-    """Empuja los hallazgos nuevos al event store firmado. Nunca tumba el recon."""
+def _push_to_store(st: AppState, res, th) -> None:
+    """Empuja al event store los hallazgos de la sesión aún no confirmados.
+
+    Se apoya en `session.stored_keys` (claves ya persistidas) y NO en el diff de
+    la tanda: así un fallo de escritura no pierde el hallazgo (se reintenta en la
+    pasada siguiente) y un reinicio no reinserta duplicados. Solo marca como
+    guardadas las claves cuando el store confirma `ok`. Nunca tumba el recon."""
     from . import bridge
+    stored = set(st.session.stored_keys)
+    pend = [f for f in st.session.findings
+            if bridge.natural_key(f) not in stored]
+    if not pend:
+        return
     r = bridge.persist_findings(
-        nuevos, target=st.session.target, tool=res.tool, scan_kind=res.kind,
+        pend, target=st.session.target, tool=res.tool, scan_kind=res.kind,
         ts=res.ts or time.time(), db_path=st.db_path, log=st.runlog.add)
     if r["ok"]:
+        st.session.stored_keys = sorted(
+            stored | {bridge.natural_key(f) for f in pend})
+        st.persist()
         st.runlog.add(f"store: +{r['saved']} eventos → {st.db_path}")
         print("  " + paint(f"→ {r['saved']} hallazgos al event store "
                            f"({st.db_path})", th.help))
     else:
-        print("  " + paint(f"! no se escribió en el store: {r['error']}",
-                           th.warn))
+        print("  " + paint(f"! no se escribió en el store: {r['error']} "
+                           f"(se reintentará)", th.warn))
 
 
 def _fmt_finding(f: Finding) -> str:

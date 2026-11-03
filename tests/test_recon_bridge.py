@@ -147,6 +147,46 @@ def test_sin_eventos_no_abre_store(tmp_path):
     assert r["ok"] and r["saved"] == 0
 
 
+def test_dos_escritores_no_bifurcan_la_cadena(tmp_path):
+    """Regresión: un store vivo (daemon) con la cabeza en memoria DESFASADA y un
+    segundo escritor (recon --to-store) que confirma en medio. El daemon debe
+    reencadenar sobre la fila del recon, no sobre su cabeza vieja, o verify_chain
+    reportaría manipulación falsa."""
+    from centinel.core import ThreatEvent
+
+    db = str(tmp_path / "live.db")
+    daemon = EventStore(db)                       # "daemon" de larga vida
+    try:
+        # El daemon escribe y confirma su primera fila.
+        asyncio.run(daemon.save(ThreatEvent(source="authlog", kind="a",
+                                            src_ip="1.1.1.1")))
+        daemon.flush()
+        cabeza_vieja = daemon.head_hash()
+
+        # Otro proceso (recon) abre la MISMA bd, escribe y confirma. El daemon
+        # aún tiene `cabeza_vieja` en memoria.
+        f = Finding(kind="port", port=22, proto="tcp", state="open")
+        r = bridge.persist_findings([f], target="t", tool="nmap", ts=9.0,
+                                    db_path=db)
+        assert r["ok"] and r["saved"] == 1
+        assert r["head"] != cabeza_vieja          # recon encadenó sobre el daemon
+
+        # El daemon escribe de nuevo: debe reencadenar sobre la fila del recon.
+        asyncio.run(daemon.save(ThreatEvent(source="authlog", kind="b",
+                                            src_ip="2.2.2.2")))
+        daemon.flush()
+    finally:
+        daemon.close()
+
+    st = EventStore(db)
+    try:
+        assert st.count() == 3
+        chk = st.verify_chain()
+        assert chk["ok"] and chk["checked"] == 3   # cadena intacta, sin bifurcar
+    finally:
+        st.close()
+
+
 # --------------------------------------------------------------------------
 # Degradar sin tumbar (store mockeado que falla)
 # --------------------------------------------------------------------------
@@ -165,6 +205,36 @@ def test_degrada_si_el_store_no_construye(monkeypatch):
                                 log=logs.append)
     assert r["ok"] is False and r["saved"] == 0
     assert r["error"] and logs                       # se registró el motivo
+
+
+def test_no_reporta_exito_si_el_commit_falla(monkeypatch):
+    """Los inserts entran pero el commit por lote falla: persist_events debe
+    devolver ok=False (antes `close()` tragaba el error y mentía éxito)."""
+    import centinel.storage.db as dbmod
+
+    class _FakeStore:
+        def __init__(self, *a, **k):
+            self.closed = False
+
+        async def save(self, ev):
+            pass                                  # el insert "va bien"
+
+        def flush(self):
+            raise RuntimeError("disco lleno")     # ...pero el commit revienta
+
+        def head_hash(self):
+            return "x"
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(dbmod, "EventStore", _FakeStore)
+    logs = []
+    f = Finding(kind="port", port=22, proto="tcp", state="open")
+    r = bridge.persist_findings([f], target="t", ts=1.0, db_path="x.db",
+                                log=logs.append)
+    assert r["ok"] is False and r["saved"] == 0
+    assert "lleno" in r["error"] and logs
 
 
 def test_degrada_si_save_falla(monkeypatch):

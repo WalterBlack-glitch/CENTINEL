@@ -32,6 +32,10 @@ class Session:
     updated: float = field(default_factory=time.time)
     findings: list[Finding] = field(default_factory=list)
     commands: list[str] = field(default_factory=list)   # historial de comandos
+    # Claves naturales ya confirmadas en el event store firmado (--to-store).
+    # Se persiste para reintentar las que fallaron y NO reinsertar duplicados
+    # tras un reinicio. Vacía si nunca se usó el puente.
+    stored_keys: list[str] = field(default_factory=list)
 
     @property
     def dir(self) -> Path:
@@ -88,7 +92,8 @@ def load(name: str) -> Session | None:
         name=data.get("name", slugify(name)), target=data.get("target", ""),
         created=data.get("created", time.time()),
         updated=data.get("updated", time.time()),
-        findings=finds, commands=list(data.get("commands", [])))
+        findings=finds, commands=list(data.get("commands", [])),
+        stored_keys=list(data.get("stored_keys", [])))
 
 
 def listing() -> list[dict]:

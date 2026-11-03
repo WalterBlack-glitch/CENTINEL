@@ -29,8 +29,8 @@ def _parse(argv):
     p = argparse.ArgumentParser(prog="centinel.recon", add_help=True)
     p.add_argument("--to-store", action="store_true",
                    help="OPT-IN: vuelca los hallazgos de recon al event store "
-                        "firmado del IDS (misma línea de tiempo/correlación). "
-                        "Apagado por defecto.")
+                        "firmado del IDS (misma línea de tiempo forense; aún no "
+                        "se correlacionan). Apagado por defecto.")
     p.add_argument("--db", default="centinel.db",
                    help="ruta del event store al que volcar con --to-store")
     return p.parse_args(argv)
